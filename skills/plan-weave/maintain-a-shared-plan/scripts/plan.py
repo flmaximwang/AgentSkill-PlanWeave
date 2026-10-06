@@ -10,8 +10,9 @@
     └── plan.canvas   Obsidian JSON Canvas 视图（自动生成）
 
 模型借自 PlanWeave：plan → task（节点）→ block（文档）+ 依赖 + 评审回路 + run 记录。
-block 的状态机：pending → ready(派生) → claimed → running → review → done，
-旁支 blocked / cancelled / needs_changes(评审打回，回到 ready)。
+block 的状态机：pending → ready(派生) → claimed → running → review → done，旁支 blocked / cancelled。
+评审打回 = 从 review 回到 claimed（块还是原 owner 的，只是重做一遍），打回原因存进 block.feedback，
+次数由 runs 里数出来（plan.html 显示成 ⟲N）。
 
 时间戳一律本地时区 ISO8601。全部 stdlib，无第三方依赖。
 """
@@ -31,9 +32,9 @@ PLANS_ROOT = PROFILE_HOME / "workspace" / "plans"
 TEMPLATE = HERE.parent.parent / "assets" / "plan.html"
 
 BLOCK_STATUS = ["pending", "claimed", "running", "review", "done",
-                "needs_changes", "blocked", "cancelled"]
+                "blocked", "cancelled"]
 ACTIVE = {"claimed", "running", "review"}
-OPEN = {"pending", "claimed", "running", "review", "needs_changes", "blocked"}
+OPEN = {"pending", "claimed", "running", "review", "blocked"}
 KINDS = ["impl", "review", "decision", "research"]
 
 
@@ -187,8 +188,6 @@ def edge_deps(plan: dict, task: dict, block: dict) -> list[str]:
 def block_effective(plan: dict, block: dict, task: dict | None = None) -> str:
     """派生状态：pending + 依赖全 done => ready；pending + 依赖未全 done => waiting。"""
     st = block["status"]
-    if st == "needs_changes":
-        return "ready"
     if st != "pending":
         return st
     if task is None:
@@ -311,7 +310,8 @@ def cmd_block(a):
     bids = [b["id"] for b in task["blocks"]]
     bid = f"{task['id']}#" + next_ids(plan, "B-", [b.split('#')[1] for b in bids])
     block = {
-        "id": bid, "title": a.title, "kind": a.kind, "status": "pending",
+        "id": bid, "title": a.title, "kind": a.kind,
+        "status": getattr(a, "status", None) or "pending",
         "owner": a.owner or task.get("owner", ""), "doc": a.doc or "",
         "done_when": a.done_when or [], "artifacts": [], "deps": a.deps or [],
         "review_of": a.review_of or "", "feedback": "",
@@ -337,16 +337,22 @@ def cmd_set(a):
     target["status_since"] = a.at or now()
     if a.owner:
         target["owner"] = a.owner
-    if block and a.status in ("claimed", "running", "review", "done", "blocked",
-                              "needs_changes"):
+    if block and a.doc:
+        target["doc"] = a.doc
+    if block and a.done_when:
+        target["done_when"] = a.done_when
+    if block and a.status in ("claimed", "running", "review", "done", "blocked"):
         block.setdefault("runs", []).append({
             "at": a.at or now(), "by": a.by or target.get("owner") or a.actor,
             "from": old, "to": a.status, "note": a.note or ""})
-    if block and a.status == "needs_changes" and a.note:
+    # 评审打回 = 从 review 走出去、且不是 done：块回到原 owner 手上（claimed），原因记进 feedback
+    if block and old == "review" and a.status != "done" and a.note:
         block["feedback"] = a.note
     if block and a.status == "done" and a.artifact:
         block.setdefault("artifacts", []).extend(a.artifact)
     log_event(plan, "status", f"{target['id']}: {old} → {a.status}"
+              + ("（doc 已更新）" if (block and a.doc) else "")
+              + ("（done_when 已更新）" if (block and a.done_when) else "")
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=target["id"])
     commit(a.slug, plan, a)
     print(f"✓ {target['id']} {old} → {a.status}")
@@ -380,7 +386,7 @@ def cmd_current(a):
     rows = []
     for t, b in all_blocks(plan):
         e = block_effective(plan, b, t)
-        if e in {"ready", "claimed", "running", "review", "blocked"} or b["status"] == "needs_changes":
+        if e in {"ready", "claimed", "running", "review", "blocked"}:
             rows.append((e, t["id"], b["id"], b["title"], b.get("owner", "")))
     order = {"blocked": 0, "review": 1, "running": 2, "claimed": 3, "ready": 4}
     rows.sort(key=lambda r: (order.get(r[0], 9), r[2]))
@@ -455,9 +461,9 @@ def cycle(graph: dict):
 # ---------------------------------------------------------------- render
 
 STATUS_ZH = {
-    "done": "已完成", "running": "进行中", "claimed": "已认领", "review": "评审中",
-    "ready": "可开始", "waiting": "等前置", "pending": "待排", "blocked": "受阻",
-    "needs_changes": "待返工", "cancelled": "已取消",
+    "done": "已完成", "running": "进行中", "claimed": "已认领", "review": "待评审",
+    "ready": "待认领", "waiting": "等前置", "pending": "待排", "blocked": "待批准",
+    "cancelled": "已取消",
 }
 
 
@@ -499,7 +505,7 @@ def render_md(plan: dict) -> str:
     rows = []
     for t, b in all_blocks(plan):
         e = block_effective(plan, b, t)
-        if e in {"ready", "claimed", "running", "review", "blocked"} or b["status"] == "needs_changes":
+        if e in {"ready", "claimed", "running", "review", "blocked"}:
             rows.append((e, b, t))
     order = {"blocked": 0, "review": 1, "running": 2, "claimed": 3, "ready": 4}
     rows.sort(key=lambda r: (order.get(r[0], 9), r[1]["id"]))
@@ -637,7 +643,7 @@ def cmd_digest(a):
     mine = []
     for t, b in all_blocks(plan):
         if a.to in (b.get("owner"), "") and block_effective(plan, b, t) in \
-                {"ready", "claimed", "running", "review"}:
+                {"ready", "claimed", "running", "review", "blocked"}:
             mine.append((t, b))
     mine.sort(key=lambda tb: tb[1]["id"])
     lines = [f"📋 **{plan['title']}** · {done}/{tot} 块（{pct}%）· 更新 {plan['updated_at'][:16].replace('T',' ')}",
@@ -656,21 +662,21 @@ def cmd_digest(a):
         rows = []
         for t, b in all_blocks(plan):
             e = block_effective(plan, b, t)
-            if e in {"ready", "claimed", "running", "review", "blocked"} or b["status"] == "needs_changes":
+            if e in {"ready", "claimed", "running", "review", "blocked"}:
                 rows.append((e, b))
         order = {"blocked": 0, "review": 1, "running": 2, "claimed": 3, "ready": 4}
         rows.sort(key=lambda r: (order.get(r[0], 9), r[1]["id"]))
         if rows:
             lines.append("▶ **在途**：")
             for e, b in rows[:8]:
-                tag = "⚠ 受阻" if e == "blocked" else STATUS_ZH.get(e, e)
-                lines.append(f"  · `{b['id']}` {b['title']} — {tag} @{b.get('owner') or '未指派'}")
+                tag = "⚠ 待批准" if e == "blocked" else STATUS_ZH.get(e, e)
+                lines.append(f"  · `{b['id']}` {b['title']} — {tag} @{b.get('owner') or '未指派'}"
+                             + (f" · ⚠{b['feedback']}" if b.get("feedback") else ""))
         else:
             lines.append("▶ 没有在途工作。")
-    blocked = [b for _, b in all_blocks(plan) if block_effective(plan, b, owner_of(plan, b)) == "blocked"
-               or b["status"] == "needs_changes"]
+    blocked = [b for _, b in all_blocks(plan) if block_effective(plan, b, owner_of(plan, b)) == "blocked"]
     for b in blocked:
-        lines.append(f"⚠ `{b['id']}` {b['title']}：{b.get('feedback') or '受阻，需决定'}")
+        lines.append(f"⚠ `{b['id']}` {b['title']}：{b.get('feedback') or '待批准，需决定'}")
     for bid, h in list(stale.items())[:5]:
         lines.append(f"⏳ `{bid}` 悬置 {h:.0f}h 无更新")
     if a.format == "md":
@@ -716,6 +722,8 @@ def main(argv=None):
     p.add_argument("--deps", nargs="*", default=[])
     p.add_argument("--owner", default="")
     p.add_argument("--review-of", default="")
+    p.add_argument("--status", default="pending", choices=BLOCK_STATUS,
+                   help="建块时的初始状态；要「等人点头」的块用 blocked（显示为待批准）")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_block)
 
@@ -728,6 +736,9 @@ def main(argv=None):
     p.add_argument("--by", default="")
     p.add_argument("--at", default="", help="补记时间（ISO8601），默认现在")
     p.add_argument("--artifact", action="append", default=[])
+    p.add_argument("--doc", default="", help="改块文档（做什么）——事实变了就改原文，别只写在日志里")
+    p.add_argument("--done-when", dest="done_when", action="append", default=[],
+                   help="改判据，可多次")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_set)
 
