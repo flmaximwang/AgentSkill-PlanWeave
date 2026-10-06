@@ -22,8 +22,10 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
@@ -69,12 +71,35 @@ def load(slug: str) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def atomic_write(path: Path, text: str) -> None:
+    """同目录先写临时文件再 os.replace：读者绝不会看到写了一半/被截断的文件。
+
+    plan.html 每次改状态都重写，浏览器若在截断与写入之间打开就会看到空白页 ——
+    必须原子替换（rename 在同一文件系统上是原子的）。
+    """
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix="." + path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)      # mkstemp 默认 0600；跟普通 write_text 保持一致
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save(slug: str, plan: dict) -> None:
     plan["updated_at"] = now()
     d = plan_dir(slug)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "plan.json").write_text(
-        json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write(d / "plan.json",
+                 json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
 
 
 def commit(slug: str, plan: dict, a=None) -> None:
@@ -358,6 +383,44 @@ def cmd_set(a):
     print(f"✓ {target['id']} {old} → {a.status}")
 
 
+def refs_of_block(plan: dict, bid: str) -> list[str]:
+    """哪些块把这个块 id 当依赖 / 评审对象（删之前要看）。"""
+    out = []
+    for _t, b in all_blocks(plan):
+        if b["id"] == bid:
+            continue
+        if bid in deps_of(b) or b.get("review_of") == bid:
+            out.append(b["id"])
+    return out
+
+
+def cmd_rm(a):
+    """真删一个块或任务（取消 ≠ 删除；用户说删就删）。"""
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    if block:
+        users = refs_of_block(plan, block["id"])
+        if users and not a.force:
+            die(f"{block['id']} 还被这些块引用：{users} —— 确认后加 --force")
+        old = block["status"]
+        task["blocks"] = [b for b in task["blocks"] if b["id"] != block["id"]]
+        log_event(plan, "remove", f"删除块 {block['id']}「{block['title']}」（原状态 {old}）"
+                  + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=block["id"])
+        commit(a.slug, plan, a)
+        print(f"✓ 已删除块 {block['id']}（原状态 {old}）")
+        return
+    holders = [t["id"] for t in plan["tasks"]
+               if task["id"] in (t.get("deps") or []) and t["id"] != task["id"]]
+    if holders and not a.force:
+        die(f"任务 {task['id']} 还被这些任务依赖：{holders} —— 确认后加 --force")
+    n = len(task.get("blocks") or [])
+    plan["tasks"] = [t for t in plan["tasks"] if t["id"] != task["id"]]
+    log_event(plan, "remove", f"删除任务 {task['id']}「{task['title']}」（含 {n} 个块）"
+              + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=task["id"])
+    commit(a.slug, plan, a)
+    print(f"✓ 已删除任务 {task['id']}（含 {n} 个块）")
+
+
 def cmd_note(a):
     plan = load(a.slug)
     log_event(plan, a.kind, a.text, actor=a.actor, ref=a.ref or "")
@@ -620,9 +683,9 @@ def render_all(slug: str, plan: dict | None = None):
     plan = plan or load(slug)
     d = plan_dir(slug)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "PLAN.md").write_text(render_md(plan), encoding="utf-8")
-    (d / "plan.canvas").write_text(render_canvas(plan), encoding="utf-8")
-    (d / "plan.html").write_text(render_html(plan), encoding="utf-8")
+    atomic_write(d / "PLAN.md", render_md(plan))
+    atomic_write(d / "plan.canvas", render_canvas(plan))
+    atomic_write(d / "plan.html", render_html(plan))
     return d
 
 
@@ -741,6 +804,14 @@ def main(argv=None):
                    help="改判据，可多次")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_set)
+
+    p = sub.add_parser("rm", help="真删一个块或任务（取消 ≠ 删除；被引用时默认拒删）")
+    p.add_argument("slug")
+    p.add_argument("ref")
+    p.add_argument("--note", default="", help="为什么删（会记进日志）")
+    p.add_argument("--force", action="store_true", help="已被别的块引用时仍然删")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_rm)
 
     p = sub.add_parser("note", help="写一条总结/决定进日志")
     p.add_argument("slug")

@@ -204,6 +204,8 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   ```
 
   跑完 `pkill -9 -f cr-shot` 收尾。截图前先跑 `plan.py render`。
+- **三视图必须原子落盘**（`atomic_write`：同目录 tmp + fsync + `os.replace`）。旧写法 `write_text` 是「先截断再写」，而 `plan.html` 每次改状态都重写；读者（用户浏览器）只要正好落在那一瞬，就会看到**空白页**。用户报「你发的 file 链接是空的」时先怀疑这个，别去查浏览器。
+- 排查用另存一份**死文件** `plan-snapshot.html`（不随重渲更新），用来区分「文件问题」还是「打开方式问题」；给用户的日常 URL 永远是会自动重渲的 `plan.html`。
 - **节点宽度与「一行几块」是按 `#graph` 的宽度算出来的，不是常量**（2026-10-07 用户要求：「这么大的空间，
   节点却要换行」）：`graph()` 先用 `WMIN=216` / `GXMIN=56` 估出这一屏放得下几列（列数不超过「块最多的那条
   泳道」，多出来的列本来也是空的），再把剩余宽度摊到每列；被 `WMAX=380` / `WMIN` 夹住时剩余空间摊到列间距
