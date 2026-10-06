@@ -204,7 +204,20 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   ```
 
   跑完 `pkill -9 -f cr-shot` 收尾。截图前先跑 `plan.py render`。
-- 泳道里的块是**一行平铺**的；一条任务超过 4 个块就会横向溢出到 #graph 可视区之外（有 overflow:auto，不是丢数据，但截图/首屏看不到，用户会以为「块没了」）。2026-10-06 已改成每行 4 块自动换行（`PER` 常量在 `graph()` 里）。改布局后必须重新截图确认块数 == plan.json 里的块数。
+- **节点宽度与「一行几块」是按 `#graph` 的宽度算出来的，不是常量**（2026-10-07 用户要求：「这么大的空间，
+  节点却要换行」）：`graph()` 先用 `WMIN=216` / `GXMIN=56` 估出这一屏放得下几列（列数不超过「块最多的那条
+  泳道」，多出来的列本来也是空的），再把剩余宽度摊到每列；被 `WMAX=380` / `WMIN` 夹住时剩余空间摊到列间距
+  （`GAPCAP=120`）。节点宽度写进行内样式，窗口 resize 用 rAF 合帧重排。**改布局时别再写死宽度**——
+  原先的 `PER=4` + `W=216` 在宽屏上会让块无故折到第二行、右边空一大片（用户截图就是这个症状）。
+- 一条任务的块数超过这一屏的列数时仍会折行（如 11 块 / 每行 9 列），这是宽度上限内的正常行为；
+  `overflow:auto` 保证不丢数据。
+- 改 `assets/plan.html` 后的自检（2026-10-07 实测）：`plan.py render` 后拿 headless Chrome
+  `--dump-dom`（同样要 `perl -e 'alarm shift; exec @ARGV' 12` 兜住不退出）读 `#graph` 的 `clientWidth`
+  与每个节点的 `style="left/top/width"`，判据是「各泳道行数 == ceil(块数 / 每行块数)」+「最右缘 ≈
+  `#graph` 宽 − PAD」+「块数 == plan.json 里的块数」。想验「按容器宽度重排」不必真改窗口：
+  `function graph(){}` 是顶层函数声明（在 `window` 上），测试脚本里改 `#graph` 的 `style.width` 之后
+  直接调 `window.graph()` 再量一次即可；resize 事件那条路（rAF 合帧）用 `dispatchEvent(new Event('resize'))`
+  + 两层 `requestAnimationFrame` 量。
 - 渲染看板时若所有块都 done，泳道会折叠成空图 —— 这是正常现象（去掉「隐藏已完成」即可）。
 - 改 `assets/plan.html` 后不用开浏览器验证布局：用 node 打桩跑一遍内联脚本，能直接拿到每个节点的
   坐标并暴露渲染异常（本 skill 就是这么发现"隐藏已完成后节点被推到屏幕外"的）。

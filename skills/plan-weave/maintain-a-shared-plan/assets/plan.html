@@ -53,6 +53,7 @@
   .node{position:absolute;width:216px;height:88px;border-radius:10px;background:var(--panel);
         border:1px solid var(--line);border-left:4px solid var(--waiting);padding:8px 10px;
         cursor:pointer;box-shadow:var(--shadow);transition:transform .12s;overflow:hidden}
+        /* 宽度由 graph() 按 #graph 可用宽度动态写进行内样式；这里的 216px 只是没有 JS 时的兜底 */
   .node:hover{transform:translateY(-2px)}
   .node.sel{outline:2px solid var(--running)}
   .node .id{font-size:11px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -248,15 +249,29 @@ function graph(){
   const hideDone = document.getElementById('hidedone').checked;
   const shown = BLOCKS.filter(b => !(hideDone && b.status === 'done'));
   const visible = new Set(shown.map(b => b.id));
-  const W = 216, H = 88, GX = 84, LAB = 24, GY = 26, PAD = 18;
+  const H = 88, LAB = 24, GY = 26, PAD = 18;
   const g = document.getElementById('graph');
   [...g.querySelectorAll('.node,.lane')].forEach(n => n.remove());
   const svg = document.getElementById('edges');
   const pos = {};
-  let maxX = W, y = PAD;
   const lanes = PLAN.tasks
     .map(t => ({t, blocks: t.blocks.filter(b => visible.has(b.id))}))
     .filter(l => l.blocks.length);
+
+  // 节点宽度与「一行几块」都按 #graph 的实际宽度算（窗口一改就重算，见文件末尾的 resize）：
+  // 先取宽度放得下的列数（列宽不低于 WMIN），再把剩余宽度摊到每列 —— 宽屏上块更宽、一行放得更多，
+  // 不再无故折到第二行；列数不超过「块最多的那条泳道」，多出来的列本来也是空的。
+  const mostBlocks = lanes.reduce((m, l) => Math.max(m, l.blocks.length), 1);
+  const avail = Math.max(180, g.clientWidth);
+  const WMIN = 216, WMAX = 380, GXMIN = 56, GAPCAP = 120;
+  const byWidth = Math.floor((avail - 2 * PAD + GXMIN) / (WMIN + GXMIN));
+  const PER = Math.max(1, Math.min(mostBlocks, byWidth));
+  const W = Math.round(Math.min(WMAX, Math.max(WMIN, (avail - 2 * PAD - (PER - 1) * GXMIN) / PER)));
+  // 宽度被 WMAX/WMIN 夹住后剩下的空间摊到列间距上（有上限，别把边拉成一条长线）
+  const GX = PER > 1
+    ? Math.min(GAPCAP, Math.max(GXMIN, Math.floor((avail - 2 * PAD - PER * W) / (PER - 1))))
+    : GXMIN;
+  let maxX = W + PAD, y = PAD;
 
   lanes.forEach(l => {
     const sts = l.blocks.map(eff);
@@ -273,8 +288,7 @@ function graph(){
       <span class="lz">${ZH[st]||st} · @${esc(l.t.owner || '—')}</span>`;
     g.appendChild(lab);
     const top = y + LAB;
-    // 每行最多 PER 块，超出换行：泳道块多时不再横向溢出到画面外
-    const PER = 4;
+    // 一行最多 PER 块（PER 由上面的可用宽度算出），放不下的才折到下一行
     let rowsN = 1;
     l.blocks.forEach((b, j) => {
       const row = Math.floor(j / PER), colIdx = j % PER;
@@ -285,7 +299,7 @@ function graph(){
       const e = eff(b), rw = reworkCount(b), n = document.createElement('div');
       n.className = 'node ' + e + (b.status === 'done' ? ' done' : '');
       n.dataset.id = b.id;
-      n.style.cssText = `left:${x}px;top:${ny}px;border-left-color:${C[e]||C.waiting}`;
+      n.style.cssText = `left:${x}px;top:${ny}px;width:${W}px;border-left-color:${C[e]||C.waiting}`;
       n.innerHTML = `<div class="id">${esc(b.id)} · ${esc(b.kind)}</div>
         <div class="ttl">${esc(b.title)}</div>
         <div class="own"><span>${ZH[e]||e}${rw ? ` ⟲${rw}` : ''}</span><span>@${esc(b.owner||'—')}</span></div>`;
@@ -397,7 +411,12 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(
   window.addEventListener('mouseup', () => { dragging = false; });
 })();
 document.getElementById('hidedone').onchange = () => view('graph', graph);
-window.addEventListener('resize', () => view('graph', graph));
+// 窗口宽度变了就按新宽度重排；拖动窗口会连发 resize，用 rAF 合帧，避免每个像素重画一次
+let rzRAF = 0;
+window.addEventListener('resize', () => {
+  if (rzRAF) cancelAnimationFrame(rzRAF);
+  rzRAF = requestAnimationFrame(() => { rzRAF = 0; view('graph', graph); });
+});
 </script>
 </body>
 </html>
