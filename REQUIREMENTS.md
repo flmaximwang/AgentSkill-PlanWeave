@@ -3,7 +3,7 @@
 **这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-07 · 代码基线 `11b33c3`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
+> 最后对齐：2026-10-07 · 代码基线 `7a4addd`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
 ## 0. 文档地图（每个细节去哪看）
@@ -55,7 +55,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-13** | **调用式**：「我希望的格式是 `loomerto --plan <plan data file> command`」；并且「**不要支持 profile** —— 我从来没有定义过 loomerto 就是给 hermes 用的」 | 全局旗标换成 **`--plan <plan 数据文件>`**（= `$LOOMERTO_PLAN_FILE`；给目录也行）：只认这一份，**命令里不再写 slug**（位置参数整体左移一位：`set <ref> <status>`、`exec/show/rm/expand/collapse <ref>`、`note <text>`）。`--plans-root`（= `$LOOMERTO_PLANS_ROOT`）保留给「一份库里有好几份」。**`--profile` / `$LOOMERTO_PROFILE` 已从包里删除**：`plans_root()` 不再推断 `~/.hermes/...`，`exec --profile` 也删了（转录路径改由调用方 `--transcript <路径>` 给，`workers.py` 里那三个 hermes_home/live_root/transcript_path 助手一并删掉）；两个都没给时只看**当前目录的 `plan.json`**（没有就退 2 并打印该给什么）。 | 已落地 `c0ad8c8` |
 
 | **R-14** | **命令分组**：「`loomerto new` 改成 `loomerto plan new`；`loomerto task` 改成 `loomerto task new`」 | `plan` 与 `task` 成了**分组**（各带子命令表），`plan new` = 原来的 `new`、`task new` = 原来的 `task`；顶层的 `new` / `task` **已不存在**（旧写法会退 2 并列出可用命令）。其余 15 个命令仍是平铺的 | 已落地 `c0ad8c8` 之后 |
-| **R-15** | 「还要有一个 `loomerto open` 命令，用以**从 1 个 json 打开可编辑的画布**」 | `open`：起纯 stdlib 本地服务（只绑 `127.0.0.1`，默认自动挑端口 + 开浏览器），画布可改 标题/做什么/判据/认领人/类型/状态、新建任务与块、拖动改同泳道先后；写回走 `edits` → `store.commit()`（json + 三视图同步），带 `rev` 冲突检查（409）。实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`；协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md) | 已落地 |
+| **R-15** | 「还要有一个 `loomerto open` 命令，用以**从 1 个 json 打开可编辑的画布**」 | `open`：起纯 stdlib 本地服务（只绑 `127.0.0.1`，默认自动挑端口 + 开浏览器），画布可改 标题/做什么/判据/认领人/类型/状态、新建任务与块、拖动改同泳道先后；写回走 `edits` → `store.commit()`（json + 三视图同步），带 `rev` 冲突检查（409）；**观感与只读看板共用 `loomerto/assets/theme.css`**（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例一份来源，两页不会各长一套）。实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`；协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md) | 已落地 |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 

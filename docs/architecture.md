@@ -21,6 +21,8 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── __init__.py   __main__.py      `python -m loomerto` 的入口
 │   ├── assets/plan.html              只读可视化模板（**包数据**，跟着包走）
 │   ├── assets/canvas.html            `open` 的**可编辑**画布页面（同样随包走）
+│   ├── assets/theme.css              **两页共用的主题**：颜色/字体/状态胶囊/按钮/分隔线/进度条
+│   │                                 （plan.html 由 render、canvas.html 由 serve 在生成时注入）
 │   ├── model.py     数据模型与派生规则：状态机、block_deps/edge_deps、ready/waiting 派生、
 │   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
 │   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
@@ -43,7 +45,17 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 依赖方向是单向的：`cli → store → render → model`、`cli → workers`、`store → model`。
 `model` 不认识上面任何一层。
 
-## 3. 四条跨 harness / 跨安装方式的约定
+## 3. 约定：前端不许自带一套颜色
+
+- **观感只有一份来源 = `loomerto/assets/theme.css`**：颜色、字体、状态色（`--done` / `--running` / …）、
+  状态胶囊（`.pill`）、按钮（`.btn`）、分隔线（`#splitter`）、进度条（`.track`）、图例（`.legend`）
+  全在那里。两个页面各留一个 CSS 注释标记，`render.py`（plan.html）与 `serve.py`（canvas.html）
+  在生成 / 送出时把它换成这份文本 —— 所以两页仍是自包含单文件，但不会各长一套颜色。
+- JS 里要状态色就写 `var(--running)`，**不要写十六进制**（plan.html 的 `C` 表就是这么多做的）。
+- 页面的 CSS 里只留**布局**（谁在哪、多宽、怎么折行）；宽度变量两页同名 `--detail-w`。
+- 改观感 = 改 `theme.css` 一处，然后 `loomerto render`（看板）与重开 `open`（画布）各看一眼。
+
+## 4. 跨 harness / 跨安装方式的五条约定
 
 1. **错误只抛 `PlanError`**（`model.PlanError`，带 `code`＝建议的退出码）。没有 `sys.exit`。
    最外层（`cli.main()` / 未来的服务）把它变成 stderr + 退出码。
@@ -61,7 +73,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
    `cli.py` 与 `serve.py` 都只是薄薄一层适配（一个是参数解析 + print，一个是 HTTP）。
    谁再写第二份「改状态」，`runs` / `feedback` / `exec` 的写法就会开始漂。
 
-## 4. 薄壳契约（`skills/.../scripts/plan.py`）
+## 5. 薄壳契约（`skills/.../scripts/plan.py`）
 
 1. 若调用方既没给 `--plan` 也没设 `LOOMERTO_PLANS_ROOT`，就把 `<本 skill 所在 home>/workspace/plans` 设上
    （装在 profile 里 = 该 profile 的 plans；在 checkout 里跑 = `<repo>/workspace/plans`，本机自测用）。
@@ -70,7 +82,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 3. 四条都不成立 ⇒ 打印该装哪一条（`uv tool install --editable <repo>` 等），退出码 2。
    **不抛 ImportError** —— 那种报错会把人引到「谁把这个包删了」，而不是「装它」。
 
-## 5. 怎么接一个新前端（R-02 画布写回已落地第一版；R-06 服务层）
+## 6. 怎么接一个新前端（R-02 画布写回已落地第一版；R-06 服务层）
 
 **参考实现就是 `serve.py` + `assets/canvas.html`（`loomerto open <plan 数据文件>`）**——
 协议与冲突规则写在 [`canvas-sync.md`](canvas-sync.md)；照它接第二个前端（web 服务 / 别的画布）即可。
@@ -90,7 +102,7 @@ for t, b in model.all_blocks(plan): ...  # 算（派生状态一律用 model 的
   一个 `open` 服务只服务一份（想要一览就在外层做「每个 slug 起一个/换 target 重开」）。
 - **绑定与暴露**：服务只绑本机回环地址、纯 stdlib；跨机器不要开端口，让每台机器读同一份 json。
 
-## 6. 开发与验收（本机实测有效的四道闸）
+## 7. 开发与验收（本机实测有效的四道闸）
 
 1. **名字自检**：机械搬迁/新增分支后，先静态查「用到的名字是否都能解析」（拆分那轮抓到 3 处漏 import：
    `re` / `json` / 一个漏改的 `die`），比一条条跑命令看 `NameError` 快，也不漏未覆盖的分支。

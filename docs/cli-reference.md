@@ -1,6 +1,6 @@
 # `plan.py` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `11b33c3`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `7a4addd`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -150,6 +150,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 `py open [<plan 数据文件>] [--port N] [--no-open]`
 - 起一个**只绑 `127.0.0.1`** 的本地服务（纯 stdlib `http.server`），默认自动挑空闲端口并打开浏览器；
   `Ctrl-C` 停。位置参数给 plan 数据文件（或它所在目录）；**给了 `--plans-root` 时可以只写 slug**。
+- **观感与只读看板同源**：两页都注入 `loomerto/assets/theme.css`（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例）；
+  右侧详情栏与看板一样是常驻栏，**拖动那条分隔线调宽度**（双击复位，宽度记在浏览器里）。
 - 画布上能改：块的 标题 / 做什么 / 判据 / 认领人 / 类型 / **状态**（认领·开干·送审·打回·收工）、
   新建任务、新建块、**拖动卡片改同一条泳道里的先后**。
 - **不做**（故意的）：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或接线，
