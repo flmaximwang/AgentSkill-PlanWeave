@@ -249,12 +249,16 @@ function nownext(){
     .sort((a,b) => (order[a[0]]-order[b[0]]) || a[1].id.localeCompare(b[1].id));
   const el = document.getElementById('nownext');
   if (!rows.length){ el.innerHTML = '<span class="sub">没有在途工作。</span>'; return; }
-  el.innerHTML = rows.map(([e,b]) => `
+  const CAP = 12, shown = rows.slice(0, CAP);
+  el.innerHTML = shown.map(([e,b]) => `
     <div class="nowcard" data-id="${esc(b.id)}" style="border-left:4px solid ${C[e]}" title="点开看详情">
       <b>${esc(b.title)}</b>
       <span class="sub">${esc(b.id)} · ${ZH[e]||e} · @${esc(b.owner||'未指派')}</span>
       ${b.feedback ? `<span class="sub" style="color:${C.blocked}">⚠ ${esc(b.feedback)}</span>`:''}
-    </div>`).join('');
+    </div>`).join('')
+    + (rows.length > shown.length
+        ? `<div class="sub" style="padding:4px 0">…… 另有 ${rows.length - shown.length} 条同类块（多为同一个 owner 的待批准项）—— 去下面的任务图点节点看全部。</div>`
+        : '');
   // 卡片本身也能点开详情（原来只能去任务图里点节点）
   el.querySelectorAll('.nowcard').forEach(c =>
     c.onclick = () => detail(byId(c.dataset.id), {reveal:true}));
