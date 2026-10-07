@@ -61,7 +61,7 @@ loomerto --plans-root <目录> <子命令> <slug> …      # 一份库里有好�
 | task（节点） | 一条工作线 | 可带任务级 `deps`（别的任务） |
 | block（文档） | 一份可独立认领、可评审的工作 | 有 `doc`（做什么）和 `done_when`（判据），**没有判据的块不许建** |
 | run | 一次执行记录 | 改状态时自动追加，带 `by` 和 `note` |
-| exec | **谁在做 + 那条子代理线程**（认领之外的第二个身份） | 只记现在时：`by` / `delegation` / `task_index` / `transcript` / `started`；收工自动清掉 |
+| exec | **谁在做 + 那条子代理线程**（认领之外的第二个身份） | 只记现在时：`by` / `delegation` / `task_index` / `transcript` / `started`；由 `block set <ref> <在途状态> --by … --delegation …` 写，收工自动清掉 |
 
 **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/blocked/cancelled`；`ready` 与
 `waiting` 由依赖算出来（依赖全 done ⇒ ready）。想写 `ready` 会被拒绝是**故意的**——两处真相就是这个
@@ -107,21 +107,29 @@ loomerto --plans-root <目录> <子命令> <slug> …      # 一份库里有好�
 "谁在等谁"（深度/拓扑）也没法算。返工不会波及下游 —— 打回发生在做块 `done` 之前，下游一直卡在
 「等前置」，这也正是把评审卡在 done 之前的意义。
 
-## 粒度调整：块（B）⇄ 任务（T）
+## 粒度调整：块（B）⇄ 任务（T）与定点插入
 
 计划开工后粒度会变：一个块干着干着发现是**三件事**（该升成一条工作线），或者一个任务拆得太碎、
-几步其实一个人一次做完（该压回一块）。两个命令把结构一次改对，**不要手删重建** —— 重建会丢
-runs / feedback / 判据，还得手工接依赖，而块的 `deps` 只能在建块时给。
+几步其实一个人一次做完（该压回一块）；也可能只是**漏了一步**要补在中间。三个命令把结构一次改对，
+**不要手删重建** —— 重建会丢 runs / feedback / 判据，还得手工接依赖。
 
 ```bash
-py expand <slug> <块ref> [--title "…"] [--owner x] [--note "为什么"]
+py block insert <slug> <锚块ref> [--before|--after] --title "…" [--doc "…"] [--done-when "…"] \
+      [--owner x] [--status 状态] [--note "为什么插"] [--dry-run]
+                                    # 插在锚块之前/之后，把前后接线一次改对（不给就是「之前」）
+py block expand <slug> <块ref> [--title "…"] [--owner x] [--note "为什么"]
       [--step "标题 :: 做什么 :: 判据1;判据2 :: kind"]...   # 可多次，按顺序追加
-py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
+py block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
       [--title …] [--doc …] [--done-when …] [--kind impl|review|decision|research]
       [--force] [--dry-run]
 ```
 
-**`expand`：一个块 → 一个任务。** 原块**原地升级**成新任务的第一步（标题/doc/判据/runs 逐字保留，
+**`block insert`：往中间插一步。** 「某个节点之后 / 两个节点之间 / 最早节点之前」都靠它：插在锚块
+**之前**时，新块接手锚块原来等的东西（它的显式 `deps` + `review_of`），锚块改成只等新块；插在锚块
+**之后**时，新块等锚块，原来等锚块（或评审锚块）的改成等新块 —— 顺序与依赖一起改对；不这么改，
+下游会在新块还没做完时就开跑。锚块的认领人默认被沿用，`--status` 同 `block new`（默认 `blocked`）。
+
+**`block expand`：一个块 → 一个任务。** 原块**原地升级**成新任务的第一步（标题/doc/判据/runs 逐字保留，
 只换 id），`--step` 给的步骤按顺序串在后面（第 N 步依赖第 N−1 步）。新任务插在原任务之后
 （泳道顺序 = 流程顺序）。
 
@@ -166,23 +174,23 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 
 | 问 | 看哪 | 怎么写 |
 |---|---|---|
-| 谁认领了 | 块的 `owner` + runs 里最后一条进入 `claimed` 的记录 | `py set <slug> <ref> claimed --by <谁> [--owner <谁>]` |
-| 谁在做 | `exec.by` | `py set … running --by <谁>` 自动写上；换人时旧线程登记会被清掉 |
-| 线程在哪 | `exec.delegation` + `exec.task_index` + `exec.transcript` | `py exec <slug> <ref> --by <谁> --delegation deleg_xxxxxxxx [--task-index N]` |
+| 谁认领了 | 块的 `owner` + runs 里最后一条进入 `claimed` 的记录 | `py block set <slug> <ref> claimed --by <谁> [--owner <谁>]`；只换人不改状态用 `py block assign <slug> <ref> --to <谁>`（`--unset` 清掉） |
+| 谁在做 | `exec.by` | `py block set … running --by <谁>` 自动写上；换人时旧线程登记会被清掉 |
+| 线程在哪 | `exec.delegation` + `exec.task_index` + `exec.transcript` | `py block set <slug> <ref> running --by <谁> --delegation deleg_xxxxxxxx [--task-index N]` |
 
 ```bash
-py exec <slug> T-002#B-001 --by default --delegation deleg_05e3c787 --task-index 0 \
+py block set <slug> T-002#B-001 running --by default --delegation deleg_05e3c787 --task-index 0 \
         --transcript <转录文件绝对路径> --note "前半段：写脚本"
                                     # 转录在哪由你给（Hermes 侧 = <hermes home>/cache/delegation/live/<deleg>/task-<n>.log）
                                     # 不给 --transcript 就只记线程号，workers 只能报「❓ 看不到」
-py exec <slug> T-002#B-001 --unset  # 线程收工 / 交回别人
+py block set <slug> T-002#B-001 --unset   # 线程收工 / 交回别人（状态不动，<状态> 这时可以省）
 py workers <slug>                   # ← 检查：每个在途块登记的线程还在动吗
-py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含认领时刻) · 在做+线程+转录 · 判据 · run（只读）
+py block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(含认领时刻) · 在做+线程+转录 · 判据 · run（只读）
 ```
 
 - **线程号从哪来**：`delegate_task` 返回的 `delegation_id`（`deleg_xxxxxxxx`）与它在该批次里的
   `task_index`（本文档一律写成 `deleg_05e3c787#0` 这种形式）。**转录路径由调用方登记**
-  （`exec … --transcript <路径>`）—— 包不猜 harness 的目录；Hermes 侧的对应写法是 hermes home 下的
+  （`block set … --transcript <路径>`）—— 包不猜 harness 的目录；Hermes 侧的对应写法是 hermes home 下的
   `cache/delegation/live/<delegation_id>/task-<n>.log`（default profile 的 home 是 `~/.hermes`，
   其余是 `~/.hermes/profiles/<名字>/`）。不给 `--transcript` 时只记线程号，`workers` 会报「❓ 看不到」。
 - **`workers` 七种结论，一个都不许合并**：`✅ 在动`（转录最近还在写）/ `⏳ 静默`（超 `--stale-min`
@@ -196,31 +204,33 @@ py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含
   （那里比 pid + 进程启动时间指纹），别在这边把「读不到」写成结论。
 - **它只看文件、不读库**：`workers` 只读转录与同目录的 `manifest.json`（纯 stdlib、跨 profile、跨机器
   都能跑）。所以它能回答「还在写吗 / 结束了吗」，回答不了「进程还活着吗」—— 后者走上面那条升级路径。
-- **`exec` 是现在时，不是简历**：收工（`done`/`cancelled`）或退回（`pending`）时 `plan.py` 会自动清掉它；
+- **线程登记是现在时，不是简历**：收工（`done`/`cancelled`）或退回（`pending`）时 `plan.py` 会自动清掉它；
   「谁做过的」留在该块的 `runs`（每条带 `by`）与日志里。
 - **线程登记短命，产物才长命**：live 转录 7 天后回收，所以线程结束前要把真正要留的证据写进块的
-  `artifacts` 或 run 的 `note`（`py set … --artifact <路径>`），别指望以后还能回读转录。
+  `artifacts` 或 run 的 `note`（`py block set … --artifact <路径>`），别指望以后还能回读转录。
 
 ## 一次协作回合的固定动作
 
 1. **读**：`plan.py current <slug>` —— 现在能动的块；先看这个再说话。
 2. **总结**：`plan.py note <slug> "<这一段发生了什么>" --actor <谁>`
    —— 只写真正发生的；拿不准的写成「待确认」。
-3. **改状态**：`plan.py set <slug> T-002#B-002 running --by <谁> --note "<一句话>"`
+3. **改状态**：`plan.py block set <slug> T-002#B-002 running --by <谁> --note "<一句话>"`
    - 认领 → `claimed`；开干 → `running`；送审 → `review`；通过 → `done`；打回 → `claimed`
      （`--note` 会存成 `feedback`；打回默认就是原 owner 重做，所以不换人、不建新块）。
+   - 参数按状态卡：线程登记（`--delegation` / `--task-index` / `--transcript`）只在 `claimed`/`running`/`review`
+     收，`--artifact` 只在 `done` 收 —— 给错状态会退 2 并列出该状态收什么。
    - 补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
 4. **验证**：`plan.py check <slug>` —— 环 / 悬空依赖 / 无主就绪块 / 悬置超时。
    **有错误就别往下走**；告警要念给用户听。
-5. **登记线程**（把块派给子代理时）：`plan.py exec <slug> <ref> --by <谁> --delegation <deleg_id>
-   [--task-index N]` —— 之后随时 `plan.py workers <slug>` 就能看出这条线程是不是还在动
-   （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `exec … --unset`
+5. **登记线程**（把块派给子代理时）：`plan.py block set <slug> <ref> running --by <谁> --delegation <deleg_id>
+   [--task-index N] [--transcript <路径>]` —— 之后随时 `plan.py workers <slug>` 就能看出这条线程是不是还在动
+   （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `block set … --unset`
    （`set … done` 也会自动清）。
 6. **提醒**：`plan.py digest <slug> --to <参与方>`，纪律见 skill `remind-collaborators`。
 7. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
    - `check-plan-node-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
    - `check-plan-temp-hygiene`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
-     `py task` / `py block` / `py set` 命令补一个收尾任务节点与「临时文件：…」声明。
+     `py task new` / `py block new` / `py block set` 命令补一个收尾任务节点与「临时文件：…」声明。
    改完重跑；两条都要 `exit 0` 才往下走。
 
 改状态时 `plan.py` 会自动重渲染三个视图（`--no-render` 可跳过）。
@@ -229,31 +239,40 @@ py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含
 
 ```bash
 py() { python3 "$P" "$@"; }
+# 一级命令 = 对象/全局动作，动作在二级：plan / task / block 是分组，其余是单层动作
 # 定位这一份 plan（都得自带，包不认任何 harness 的目录）：
 #   --plan <plan 数据文件>    只认这一份；此后命令里**不写 slug**（位置参数整体左移一位）
-#                            例：loomerto --plan ./plan.json set T-001#B-002 done
+#                            例：loomerto --plan ./plan.json block set T-001#B-002 done
 #   --plans-root <目录> <slug>  一份库里有好几份时才用
 py list                                  # 所有 plan + 进度
 py plan new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
    --owner "rdm-assistance=agent:RdmAsst3813"
 py task new <slug> --title "…" [--deps T-001] [--owner x]
-py block <slug> --task T-001 --title "…" --kind impl|review|decision|research \
+py task set <slug> <任务ref> <状态> [--by x] [--note "…"]        # 任务状态；线程登记只在 running 收
+py task show <slug> <任务ref> [--json]                           # 一条任务的详情（只读）
+py task rm <slug> <任务ref> [--force]                            # 真删任务（连带它的块）
+py block new <slug> --task T-001 --title "…" --kind impl|review|decision|research \
    --doc "做什么" --done-when "可核验的判据" [--deps T-001#B-002] [--review-of T-001#B-002] \
    [--owner x] [--status 状态]      # --status 默认 blocked（待批准）；无需审批才显式给 pending
-py set <slug> <ref> <status> [--by x] [--note "…"] [--artifact <路径>] [--at ISO]
-      [--doc "…"] [--done-when "…"]      # 事实变了就改块原文，别只写在日志里
-py exec <slug> <块/任务ref> --by <谁> [--delegation deleg_xxxxxxxx] [--task-index N] \
-        [--transcript <路径>] [--note "…"] [--at ISO] [--unset]
-                                         # 谁在做 + 那条子代理线程（--unset 清掉）
+py block insert <slug> <锚块ref> [--before|--after] --title "…" [--doc "…"] [--done-when "…"] \
+   [--owner x] [--status 状态] [--dry-run]     # 插到某块之前/之后，接线一次改对
+py block set <slug> <ref> <状态> [--by x] [--note "…"] [--artifact <路径>] [--at ISO] \
+      [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--unset] \
+      [--doc "…"] [--done-when "…"]   # 状态 + 谁在做 + 子代理线程一个入口；参数按状态卡
+py block describe <slug> <块ref> [--title "…"] [--doc "…"] [--done-when "…"] [--kind …] [--note "为什么"]
+                                      # 只改详情、不动状态（改了会进日志）
+py block assign <slug> <块ref> [--to <参与方 id> | --unset] [--note "为什么"]
+                                      # 指派/取消指派认领人（不动状态）
 py workers <slug> [--stale-min 30] [--json]
                                          # 在途块的线程还在动吗（已结束/号记错 ⇒ exit 1）
-py expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2"] [--dry-run]
+py block expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2"] [--dry-run]
                                          # 一个块 → 一个任务（块成为第一步）
-py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
+py block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
                                          # 一个任务 → 一个块（默认回展开前的位置）
+py block rm <slug> <块ref> [--force]     # 真删一个块（被引用时默认拒删）
 py note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
 py current <slug>                        # 现在该谁动
-py show <slug> <ref> [--json] [--runs N] # 一个块/一条任务的详情（只读；--runs 0 = 全列 run）
+py block show <slug> <块ref> [--json] [--runs N]   # 一个块的详情（只读；--runs 0 = 全列 run）
 py check <slug>                          # 图质量（有错误 exit 1）
 py digest <slug> [--to <参与方>] [--stale-hours 24]
 py render <slug>                         # 手动刷新三个视图
@@ -327,18 +346,19 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 - 传播期内 `PUT /channels/<thread>/thread-members/@me` 也会 403，**它单独不能证明 thread 是私有的**。
 - 判断「提醒通道真的通了」的唯一判据不是 `hermes send` 回显 `sent`，而是**回读那条消息的 author.id**
   等于本 profile bot 自己的 user id（`/users/@me`）。否则可能发成了别的 profile 的 bot。
-- `set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。
-- **`set` 会自动把 `--by` 写进 `exec.by`**（没给 `--by` 就落到 owner），所以「谁在做」不用另起一道仪式；
+- `block set` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。
+- **`block set` 会自动把 `--by` 写进 `exec.by`**（没给 `--by` 就落到 owner），所以「谁在做」不用另起一道仪式；
   **换人（`--by` 与原来不同）会连带清掉旧的 `delegation`/`transcript`** —— 旧线程不再代表这一块，这是故意的。
 - **`workers` 是 `check` 的姊妹**：`check` 查图（环 / 悬空依赖 / 无主就绪块），`workers` 查「干活的那个人」。
   只把 `⚠ 线程已结束` 与 `❌ 号记错` 当硬信号（退 1）；`❓ 看不到` 与 `➖` 是提示 —— 但它们出现时别默认「没事」，
   要说清是「看不到」还是「没在跑」。
 - **线程号短命，别把它当档案号**：live 转录 7 天回收、跨机器的路径在这边根本看不到。要让后人知道
-  「这块是谁做的、证据在哪」，写进 `artifacts` 与 run 的 `note`；`exec` 只保证**现在**能查在动没在动。
-- **块的 `deps` 只能在建块时一次给全**：`plan.py` 没有「给已有块加依赖」的命令（`set` 不接受 `--deps`）。
-  想拆成「先建块、再补依赖」两步，只会建出一堆空标题的重复块 —— 建块时就把 `--deps <task>#<block>` 传对。
-  事后要改依赖只有 `expand` / `collapse` 两条路（它们把前后接线一次改对并查环），或者 `rm` 重建。
-- **`collapse --into` 落进一个有任务级依赖的任务会继承它的全部块**：`block_deps` 会把落点任务的
+  「这块是谁做的、证据在哪」，写进 `artifacts` 与 run 的 `note`；线程登记只保证**现在**能查在动没在动。
+- **块的 `deps` 仍然不能事后直接改**：`block set` / `block describe` 都不接受 `--deps`（给已有块「补一条依赖」
+  这件事本身就会改前后顺序，得让命令把接线一次改对并查环）。要改接线的三条路：`block insert`
+  （把新步插进去、接手或改接前后依赖）、`block expand` / `block collapse`（粒度升降，顺手重接），
+  再不行 `block rm` 重建 —— 建块时就把 `--deps <task>#<block>` 传对最省事。
+- **`block collapse --into` 落进一个有任务级依赖的任务会继承它的全部块**：`block_deps` 会把落点任务的
   任务级前置展开成「那些任务的每一个块」，所以压出来的块可能凭空多等一批块、甚至成环。
   报错里会点名是哪个任务级依赖；换个落点或用 `--keep-task` 即可。
 - **`new --owner "you=…"` 传了也没用**：`cmd_new` 在循环之后无条件再 `add_participant(plan, "you=human:本人")`，

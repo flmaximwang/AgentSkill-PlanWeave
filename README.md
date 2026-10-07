@@ -34,7 +34,7 @@ export LOOMERTO_HOME=<repo>               # 让别的 python 也能 import loome
 
 plan 在哪**不靠猜、也不认任何 harness**：`--plan <plan 数据文件>`（= `$LOOMERTO_PLAN_FILE`）只认这一份；
 `--plans-root <目录>`（= `$LOOMERTO_PLANS_ROOT`）是一份 plan 库（命令里再给 slug）；两个都不给就看当前目录的
-`plan.json`。例：`loomerto --plan ./plan.json show T-001#B-002`、`loomerto --plans-root ~/plans list`。
+`plan.json`。例：`loomerto --plan ./plan.json block show T-001#B-002`、`loomerto --plans-root ~/plans list`。
 
 **2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 
@@ -112,9 +112,10 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   `ready` 与 `waiting` 由依赖算出来（依赖全 done ⇒ ready）。写 `ready` 会被拒绝是**故意的** ——
   两处真相就是这个系统要消灭的东西。**新建块默认 `blocked`（待批准）**，AI 判断无需审批才写 `pending`。
 - **一次协作回合的固定动作**：`current`（先看现在能动的块）→ `note`（总结这一段真正发生了什么，
-  拿不准的写「待确认」）→ `set`（只改受影响的块，带 `--by` / `--note`）→ `check`（环 / 悬空依赖 /
-  无主就绪块 / 悬置超时，**有错误就别往下走**）→ `exec`（派给子代理时登记线程）→ `workers`
-  （每个在途块的线程还在动吗）→ `digest`（提醒，纪律见 `remind-collaborators`）。
+  拿不准的写「待确认」）→ `block set`（只改受影响的块，带 `--by` / `--note`；派给子代理时同一句里
+  补 `--delegation` / `--transcript`）→ `check`（环 / 悬空依赖 / 无主就绪块 / 悬置超时，
+  **有错误就别往下走**）→ `workers`（每个在途块的线程还在动吗）→ `digest`（提醒，纪律见
+  `remind-collaborators`）。
   补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
 - **谁认领了 / 谁在做 / 线程在哪**：一个块上站着两个人 —— `owner`（认领人）与 `exec.by`（此刻动手的那个），
   第三个字段 `exec.delegation` / `transcript` 给出**具体的子代理线程**（`deleg_05e3c787#0` 与它的转录文件）。
@@ -125,10 +126,11 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   他和你在同一台机器上，粘进地址栏即开）。整条消息压到不被 Discord 拆成 `(1/2)`；机制、字段清单、判据
   都放 plan 文件里。**截图只在明确索取时才发一次，且永远不许顶掉那行 URL**（截图一改就过期）。
   给 **agent** 的是另一份：`plan.json` / `PLAN.md` 的绝对路径。
-- **粒度可调（expand / collapse）**：一个块干着干着发现是三件事 → `expand` 把它升级成**一个任务**
-  （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `collapse` 压回**一个块**
+- **粒度可调（`block expand` / `block collapse`）**：一个块干着干着发现是三件事 → `block expand` 把它升级成**一个任务**
+  （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `block collapse` 压回**一个块**
   （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
   一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
+  要往**中间**插一步（不是追加到末尾）用 `block insert <锚块> [--before|--after]`，它同样把接线改对。
 - **实现**在仓库根的 `loomerto/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
   [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 
@@ -181,7 +183,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
 结论四值：`✅ 闭环` / `⚠️ 部分`（收尾在，但声明缺项或位置偏早）/ `❌ 不闭环`（有生产、没人收尾，exit 1）/
 `➖ 无需清理（没检测到）`。**`➖` 是「没查出来」，不是「没有」** —— 判据只看文本，拿不准就加 `--strict`。
 
-- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `task` / `block` / `set` 命令
+- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `task new` / `block new` / `block set` 命令
   （含任务号、`--deps`、清单与判据骨架），照抄即可把「删除临时文件」这个收尾任务节点建起来。
 - **同音词是主要误报源**（第一版实测误判 4 份真 plan）：「暂存」= git staging、「副本」= 工作副本、
   「残留」= 没留下坏链接、「截图」= 笔记里的附件 —— 都不是临时文件；强判据只认能指认

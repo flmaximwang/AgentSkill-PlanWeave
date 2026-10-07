@@ -31,7 +31,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── edits.py     **改动的唯一实现**：改状态 / 改字段 / 加任务 / 加块 / 重排 —— CLI 与画布共用
 │   ├── serve.py     `loomerto open` 的画布服务（http.server，只绑 127.0.0.1，写回同一个 commit）
 │   ├── workers.py   子代理线程探活：读转录 + manifest.json，给七种结论
-│   └── cli.py       argparse + 17 个子命令（`plan new` / `task new` 分组）+ 中文输出。
+│   └── cli.py       argparse + 12 个一级命令（`plan` / `task` / `block` 是分组，动作都在二级）+ 中文输出。
 │                    **唯一允许 print、唯一决定退出码的地方。**
 ├── skills/                           随包发布的 skill（装进 Hermes profile 的是这一层）
 │   └── plan-weave/maintain-a-shared-plan/

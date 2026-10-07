@@ -47,11 +47,11 @@ metadata:
 3. **按建议补 plan**（`plan.py` 现成命令，不需要改模型；工具按你的 plan 现算任务号与依赖块）：
    ```
    py task new <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
-   py block <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
+   py block new <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
       --doc "本轮产生的临时文件：<逐项列路径/glob>（产生自 <生产块 id>）" \
       --done_when "逐项给出归属（已在别处存在 / 不再需要），删除后 test ! -e 为空" \
       --deps <最后一个生产块>
-   py set   <slug> <生产块 id> <它现在的状态> --doc "<原 doc>⏎临时文件：<路径/glob>"
+   py block describe <slug> <生产块 id> --doc "<原 doc>⏎临时文件：<路径/glob>"
    ```
 4. **重跑**：改完再跑一次；`exit 0` 且结论不是 ❌ 才算过。
 

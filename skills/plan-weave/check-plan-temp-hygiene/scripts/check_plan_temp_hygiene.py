@@ -278,10 +278,10 @@ def suggestions(plan: dict, evidence, cleanup):
     out = []
     if not cleanup:
         out.append("1) 建收尾任务节点（这个 plan 里没有人负责清临时文件）：")
-        out.append(f"     py task {slug} --title \"清理本轮临时文件\" --owner <谁>"
+        out.append(f"     py task new {slug} --title \"清理本轮临时文件\" --owner <谁>"
                    + (f" --deps {last_task}" if last_task else ""))
         out.append("2) 在它下面建这一块，把清单与判据写进去：")
-        out.append(f"     py block {slug} --task {newt} --title \"删除本轮临时文件\" --kind impl \\")
+        out.append(f"     py block new {slug} --task {newt} --title \"删除本轮临时文件\" --kind impl \\")
         out.append(f"        --doc \"本轮产生的临时文件：<逐项列路径/glob>"
                    f"（产生自 {'、'.join(prod_blocks) or '<生产块>'}）\" \\")
         out.append(f"        --done_when \"逐项给出归属（已在别处存在 / 不再需要），"
@@ -290,14 +290,15 @@ def suggestions(plan: dict, evidence, cleanup):
         c = cleanup[0]
         out.append(f"1) 收尾节点 {c['id']}「{c['title']}」已经在，"
                    f"但它在流程上早于这些也在提临时文件的块：{short(c['after_me'])}")
-        out.append("   要么把它移到它们之后（`set` 改不了位置：用 expand/collapse 或重建块），"
+        out.append("   要么把它移到它们之后（`block set` 改不了位置：用 `block expand` / `block collapse` 或重建块），"
                    "要么确认那几个块不产生临时文件。")
         out.append(f"2) 补齐判据：{c['id']} 的 done_when "
                    f"{'是空的' if not c['has_done_when'] else '要逐项能核验'}"
                    f" —— 例：\"逐项证明内容已在别处存在（列出归属），删除后 test ! -e 为空\"")
     out.append("3) 声明：把「会产生哪些临时文件」写进生产块的 doc（一行就行），"
                "或让产物字段指到临时路径：")
-    out.append(f"     py set {slug} <生产块 id> <它现在的状态> --doc \"<原 doc>⏎临时文件：<路径/glob>\"")
+    out.append(f"     py block describe {slug} <生产块 id> --doc \"<原 doc>⏎临时文件：<路径/glob>\"" 
+               "    # --doc 是整段替换，原 doc 别丢；只想改详情就用 block describe（不动状态）")
     return out
 
 
