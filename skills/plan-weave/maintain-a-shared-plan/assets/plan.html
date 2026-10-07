@@ -96,6 +96,7 @@
   #detail h3{margin:0 0 6px;font-size:15px}
   #detail .kv{margin:8px 0;color:var(--dim)}
   #detail ul{margin:6px 0 6px 18px;padding:0}
+  #detail p.doc{margin:8px 0;line-height:1.62}
   #detail .run{border-left:2px solid var(--line);padding:2px 0 2px 8px;margin:6px 0;color:var(--dim);font-size:12px}
   .legend{display:flex;flex-wrap:wrap;gap:12px;padding:10px 16px;color:var(--dim);font-size:12px}
   .legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
@@ -365,7 +366,7 @@ function detail(b, opts){
     <h3>${esc(b.title)}</h3>
     <div class="kv"><span class="pill" style="background:${C[e]||C.waiting}">${ZH[e]||e}</span>
       &nbsp;<code>${esc(b.id)}</code> · ${esc(b.kind)} · @${esc(b.owner||'未指派')}</div>
-    ${b.doc ? `<p>${esc(b.doc)}</p>` : ''}
+    ${b.doc ? `<p class="doc">${esc(b.doc).replace(/\n/g,'<br>')}</p>` : ''}
     ${(b.done_when||[]).length ? `<b>完成判据</b><ul>${b.done_when.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}
     ${(b.deps||[]).length ? `<b>依赖</b><div class="kv">${b.deps.map(esc).join(' · ')}</div>`:''}
     ${b.review_of ? `<b>评审对象</b><div class="kv">${esc(b.review_of)}</div>`:''}
