@@ -234,9 +234,9 @@ py() { python3 "$P" "$@"; }
 #                            例：loomerto --plan ./plan.json set T-001#B-002 done
 #   --plans-root <目录> <slug>  一份库里有好几份时才用
 py list                                  # 所有 plan + 进度
-py new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
+py plan new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
    --owner "rdm-assistance=agent:RdmAsst3813"
-py task <slug> --title "…" [--deps T-001] [--owner x]
+py task new <slug> --title "…" [--deps T-001] [--owner x]
 py block <slug> --task T-001 --title "…" --kind impl|review|decision|research \
    --doc "做什么" --done-when "可核验的判据" [--deps T-001#B-002] [--review-of T-001#B-002] \
    [--owner x] [--status 状态]      # --status 默认 blocked（待批准）；无需审批才显式给 pending
@@ -257,9 +257,27 @@ py show <slug> <ref> [--json] [--runs N] # 一个块/一条任务的详情（只
 py check <slug>                          # 图质量（有错误 exit 1）
 py digest <slug> [--to <参与方>] [--stale-hours 24]
 py render <slug>                         # 手动刷新三个视图
+py open <plan 数据文件> [--port N]        # 起本地服务，把这份 plan 开成**可编辑的画布**（只绑 127.0.0.1）
 ```
 
 `ref` 可以写 `T-002`（任务）或 `T-002#B-001`（块），块也可以只写 `B-001`。
+
+## 可编辑的画布（`loomerto open`）
+
+只读看板是 `plan.html`（`file://` 打开，**不起服务、不发附件**）；**要动手改**就用 `open`：
+
+```bash
+loomerto --plan <plan 数据文件> open      # 等价：loomerto open <plan 数据文件>
+```
+
+- 起一个**只绑 `127.0.0.1`** 的本地服务（纯 stdlib `http.server`），默认自动挑空闲端口并打开浏览器；`Ctrl-C` 停。
+- 画布上能改：块的 **标题 / 做什么 / 判据 / 认领人 / 类型 / 状态**（认领 · 开干 · 送审 · 打回 · 收工）、
+  **新建任务**、**新建块**、**拖动卡片改同一条泳道里的先后**。
+- 每次改动走 `edits`（改动的唯一实现）→ `store.commit()`：数据文件与 `PLAN.md` / `plan.html` / `plan.canvas`
+  **同时**更新；前端带 `rev`（= `updated_at`），对不上回 **409** —— 让人先「刷新」再改（**不做自动合并**）。
+- **不做**：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或依赖接线，
+  走 `rm` / `expand` / `collapse` / `block` 更安全。
+- 要接第二个前端（别的 web 服务 / 别的画布）就读协议：`docs/canvas-sync.md`。
 
 ## 交付给人的默认包（默认就给，不用等他要）
 
@@ -277,6 +295,7 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 - 为什么 `file://` 够用：`plan.html` 就是本机上的一个文件，他和你在同一台机器上，浏览器地址栏粘进去
   即开；`plan.py` 改状态时就地重渲，URL 不变、内容永远最新。
 - **别再为它起服务**（http.server / 端口 / 保活 cron 都已经被否掉一版）—— 那只会多一个会挂的东西。
+  **唯一例外 = 要让人动手改**：那就 `loomerto --plan <数据文件> open`（见上一节），它随开随停、只绑本机。
 - **别在本 profile 的 `skills/` 上裸 `grep -r`**：目录里有 `.curator_ledger.jsonl` 与缓存索引（几十 MB 的单行 JSON），
   一次检索就能喷出几十 MB 到终端、白烧一轮。查“还有谁提过这个约定”就指名文件（`grep -n "<词>" skills/**/SKILL.md`），
   或先 `--include='*.md'` 限定。

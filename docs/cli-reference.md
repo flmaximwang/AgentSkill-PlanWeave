@@ -1,10 +1,11 @@
 # `plan.py` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `c0ad8c8`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `11b33c3`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
-> `for c in new task block set exec rm expand collapse note digest render check current show workers list; do loomerto $c --help; done`
+> `for c in plan task block set exec rm expand collapse note digest render check current show workers list open; do loomerto $c --help; done`
+> （`plan` / `task` 是分组，它们的子命令另跑：`loomerto plan new --help`、`loomerto task new --help`）
 
 ## 0. 怎么调用
 
@@ -43,16 +44,16 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 
 ## 1. 建立
 
-### `new` — 新建一份 plan
-`py new <slug> [--title TITLE] [--goal GOAL] [--owner OWNER]… [--digest-hours 6] [--quiet-hours 23:00-08:00] [--force]`
+### `plan new` — 新建一份 plan
+`py plan new <slug> [--title TITLE] [--goal GOAL] [--owner OWNER]… [--digest-hours 6] [--quiet-hours 23:00-08:00] [--force]`
 - 落在哪必须说清：`--plan <路径>/plan.json`（就建这个文件；`slug` 可省，取目录名）或 `--plans-root <目录>` + `slug`。
 - `--owner` 可多次，写法 `id=kind:label[@channel]`（`kind` ∈ `human|agent`），例：
   `--owner "rdm-assistance=agent:RdmAsst3813"`；不给 kind 时按 agent 处理。
 - 落盘后渲出三个视图；目标已存在时**必须 `--force`**。
-- 注意：`new` 之后无条件再补一个 `you=human:本人`，会覆盖同 id 的 `--owner`（要带 Discord 身份就另起 id）。
+- 注意：`plan new` 之后无条件再补一个 `you=human:本人`，会覆盖同 id 的 `--owner`（要带 Discord 身份就另起 id）。
 
-### `task` — 加一条任务（泳道）
-`py task <slug> --title TITLE [--id T-00N] [--owner x] [--deps T-001 …] [--note "…"]`
+### `task new` — 加一条任务（泳道）
+`py task new <slug> --title TITLE [--id T-00N] [--owner x] [--deps T-001 …] [--note "…"]`
 - `--deps` 是**任务级**依赖；开工条件 = 那些任务的**全部**块都 done。
 
 ### `block` — 给任务加一个块（可独立认领、可评审的工作）
@@ -142,3 +143,17 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 ### `digest` — 生成提醒/摘要文本
 `py digest <slug> [--to <参与方 id 或 you>] [--format discord|md] [--stale-hours 24]`
 - 提醒的四个要件与「什么时候不推」的纪律见 skill `remind-collaborators`。
+
+## 6. 打开可编辑的画布
+
+### `open` — 把一份 plan 当**可编辑的画布**打开
+`py open [<plan 数据文件>] [--port N] [--no-open]`
+- 起一个**只绑 `127.0.0.1`** 的本地服务（纯 stdlib `http.server`），默认自动挑空闲端口并打开浏览器；
+  `Ctrl-C` 停。位置参数给 plan 数据文件（或它所在目录）；**给了 `--plans-root` 时可以只写 slug**。
+- 画布上能改：块的 标题 / 做什么 / 判据 / 认领人 / 类型 / **状态**（认领·开干·送审·打回·收工）、
+  新建任务、新建块、**拖动卡片改同一条泳道里的先后**。
+- **不做**（故意的）：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或接线，
+  走 `rm` / `expand` / `collapse` / `block` 更安全。理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
+- **写回**：每次改动都走 `edits`（改动的唯一实现）→ `store.commit()`，所以数据文件与三个视图**同时**更新；
+  前端每次保存都带上自己读到的 `rev`（= `updated_at`），对不上回 **409** 并让人先刷新（不做自动合并）。
+- 失败不改任何东西：先改内存，出错抛 `PlanError` → 400（中文原因）；服务不会因为一次坏请求就死。

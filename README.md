@@ -32,9 +32,9 @@ cd <repo> && python3 -m loomerto …        # 不装，直接在仓库里跑
 export LOOMERTO_HOME=<repo>               # 让别的 python 也能 import loomerto（把它加进 sys.path）
 ```
 
-plan 目录**不靠猜**：`--plans-root <路径>` → `--profile <名字>`（= `~/.hermes/profiles/<名字>/workspace/plans`）
-→ `$LOOMERTO_PLANS_ROOT` / `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans`。例：
-`loomerto --profile plan-weave list`。
+plan 在哪**不靠猜、也不认任何 harness**：`--plan <plan 数据文件>`（= `$LOOMERTO_PLAN_FILE`）只认这一份；
+`--plans-root <目录>`（= `$LOOMERTO_PLANS_ROOT`）是一份 plan 库（命令里再给 slug）；两个都不给就看当前目录的
+`plan.json`。例：`loomerto --plan ./plan.json show T-001#B-002`、`loomerto --plans-root ~/plans list`。
 
 **2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 

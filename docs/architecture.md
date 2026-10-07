@@ -19,13 +19,18 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 ├── pyproject.toml                    包元数据 + console scripts（loomerto / plan）+ 包数据
 ├── loomerto/                          ★ python 包（纯 stdlib、零依赖、>=3.9）
 │   ├── __init__.py   __main__.py      `python -m loomerto` 的入口
-│   ├── assets/plan.html              可视化模板（**包数据**，跟着包走）
+│   ├── assets/plan.html              只读可视化模板（**包数据**，跟着包走）
+│   ├── assets/canvas.html            `open` 的**可编辑**画布页面（同样随包走）
 │   ├── model.py     数据模型与派生规则：状态机、block_deps/edge_deps、ready/waiting 派生、
 │   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
-│   ├── store.py     磁盘：**plans_root() 定位**、原子落盘、**唯一写入漏斗 commit(slug, plan)**
+│   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
+│   │                **唯一写入漏斗 commit(slug, plan)**
 │   ├── render.py    plan.json → PLAN.md / plan.canvas / plan.html，**只返回字符串**（写盘归 store）
+│   ├── edits.py     **改动的唯一实现**：改状态 / 改字段 / 加任务 / 加块 / 重排 —— CLI 与画布共用
+│   ├── serve.py     `loomerto open` 的画布服务（http.server，只绑 127.0.0.1，写回同一个 commit）
 │   ├── workers.py   子代理线程探活：读转录 + manifest.json，给七种结论
-│   └── cli.py       argparse + 15 个子命令 + 中文输出。**唯一允许 print、唯一决定退出码的地方。**
+│   └── cli.py       argparse + 17 个子命令（`plan new` / `task new` 分组）+ 中文输出。
+│                    **唯一允许 print、唯一决定退出码的地方。**
 ├── skills/                           随包发布的 skill（装进 Hermes profile 的是这一层）
 │   └── plan-weave/maintain-a-shared-plan/
 │       ├── SKILL.md                  给 AI 的操作手册（模型 / 状态表 / 谁在做 / 坑）
@@ -52,6 +57,9 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
    当前目录的 `plan.json`（存在才认）→ 都没有就退 2 并打印该给什么。
    **包里没有 profile / hermes 这类概念**（它可能装在 site-packages 里，离任何 harness 都远）；
    路径由调用方交给它。模板同理：`$LOOMERTO_TEMPLATE` → 包自带的 `loomerto/assets/plan.html`。
+5. **改动只有一份实现**（`edits.py`）：改状态 / 改字段 / 加任务 / 加块 / 重排都收在那里；
+   `cli.py` 与 `serve.py` 都只是薄薄一层适配（一个是参数解析 + print，一个是 HTTP）。
+   谁再写第二份「改状态」，`runs` / `feedback` / `exec` 的写法就会开始漂。
 
 ## 4. 薄壳契约（`skills/.../scripts/plan.py`）
 
@@ -62,20 +70,24 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 3. 四条都不成立 ⇒ 打印该装哪一条（`uv tool install --editable <repo>` 等），退出码 2。
    **不抛 ImportError** —— 那种报错会把人引到「谁把这个包删了」，而不是「装它」。
 
-## 5. 怎么接一个新前端（R-02 画布写回 / R-06 web 服务）
+## 5. 怎么接一个新前端（R-02 画布写回已落地第一版；R-06 服务层）
+
+**参考实现就是 `serve.py` + `assets/canvas.html`（`loomerto open <plan 数据文件>`）**——
+协议与冲突规则写在 [`canvas-sync.md`](canvas-sync.md)；照它接第二个前端（web 服务 / 别的画布）即可。
 
 ```python
-from loomerto import store, model, render      # 装过包就能直接 import
+from loomerto import store, model, edits      # 装过包就能直接 import
 
-plan = store.load("my-plan")             # 读
-for t, b in model.all_blocks(plan): ...  # 算（派生状态一律用 model 的函数，别自己实现一份）
+plan = store.load("my-plan")             # 读（plan 在哪由 --plan / --plans-root 说）
+edits.set_status(plan, "T-001#B-002", "running", by="me", note="开干")   # 改（唯一实现）
 store.commit("my-plan", plan)            # 写 = 落 json + 同步三视图（一步）
-print(render.render_html(plan, store.TEMPLATE))   # 想自定义输出就自己取字符串
+for t, b in model.all_blocks(plan): ...  # 算（派生状态一律用 model 的函数，别自己实现一份）
 ```
 
-- **人在画布上改**（R-02）：前端把改动写成「对 plan.json 的最小 patch」，走 `commit()`；不要另存一份状态。
-- **多 plan 切换**（R-06）：`store.plans_root()` 下每个 `<slug>/plan.json` 就是一个 plan，
-  `list` 那种一览在库里对应「遍历 plans_root + `model.progress()`」。
+- **人在画布上改**（R-02）：前端把改动写成一次 `op`（edit / status / task / block / reorder），
+  带上自己读到的 `rev`；服务端比对 `updated_at`，对不上回 409 —— 不要另存一份状态、不要自己合并。
+- **多 plan 切换**（R-06）：`plans_root()` 下每个 `<slug>/plan.json` 就是一个 plan；
+  一个 `open` 服务只服务一份（想要一览就在外层做「每个 slug 起一个/换 target 重开」）。
 - **绑定与暴露**：服务只绑本机回环地址、纯 stdlib；跨机器不要开端口，让每台机器读同一份 json。
 
 ## 6. 开发与验收（本机实测有效的四道闸）

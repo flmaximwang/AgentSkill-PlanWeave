@@ -46,7 +46,7 @@ metadata:
 2. **读证据**：每条证据都写明 `块 id · 字段:行号 · 命中词 · 原文`，逐条核一遍它是不是真的会写临时文件。
 3. **按建议补 plan**（`plan.py` 现成命令，不需要改模型；工具按你的 plan 现算任务号与依赖块）：
    ```
-   py task  <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
+   py task new <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
    py block <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
       --doc "本轮产生的临时文件：<逐项列路径/glob>（产生自 <生产块 id>）" \
       --done_when "逐项给出归属（已在别处存在 / 不再需要），删除后 test ! -e 为空" \
