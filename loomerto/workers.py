@@ -1,7 +1,8 @@
 """子代理线程探活：只读转录文件与同目录的 manifest.json，给出七种结论。
 
-只读文件（不读库、不连网）是为了跨 profile / 跨机器都能跑；代价是说不出「进程死没死」——
-那要去线程所在的那个 profile 里用 `delegate_task action='list'`（见 SKILL.md）。
+**转录在哪由调用方登记**（`exec … --transcript <路径>`）—— 这个模块不猜任何 harness 的目录，
+也不读库、不连网，所以跨机器都能跑。代价：它说不出「进程死没死」，只能说「转录还在写吗 /
+manifest 说结束了吗」——要更硬的判活，去线程所在的那个 harness 里问它自己的 `delegate_task`。
 """
 
 from __future__ import annotations
@@ -9,19 +10,6 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
-
-# 线程号 → 转录路径（在线程所在的 hermes home 里）
-def hermes_home(profile: str) -> Path:
-    """线程号 → 转录路径时用的 hermes home；空 / default ⇒ 本机默认 profile 的 ~/.hermes。"""
-    base = Path.home() / ".hermes"
-    p = (profile or "").strip()
-    return base if p in ("", "default") else base / "profiles" / p
-
-def live_root(profile: str) -> Path:
-    return hermes_home(profile) / "cache" / "delegation" / "live"
-
-def transcript_path(profile: str, delegation: str, idx: int) -> Path:
-    return live_root(profile) / delegation / f"task-{idx}.log"
 
 
 # 七种结论
@@ -58,7 +46,10 @@ def probe_thread(ex: dict, stale_min: float):
         if who:
             return "absent", f"只登记了在做 @{who}，没有子代理线程（人在做 / 还没派给子代理）", []
         return "absent", "块在途，但执行者与线程都没登记（谁在做？）", []
-    p = Path(tp or transcript_path(ex.get("profile") or "", deleg, idx))
+    if not tp:
+        return "unreachable", (f"只记了线程号（{deleg or '?'}#{idx}），没登记转录路径 —— 看不到这条线程"
+                               f"（登记时给 `--transcript <路径>` 才能读）"), []
+    p = Path(tp)
     if not p.exists():
         if p.parent.exists():
             sibs = sorted(x.name for x in p.parent.glob("task-*.log"))

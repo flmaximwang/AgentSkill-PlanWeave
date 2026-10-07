@@ -15,6 +15,8 @@ from .store import *          # noqa: F401,F403
 from .render import *         # noqa: F401,F403
 from .workers import *        # noqa: F401,F403
 
+from . import store as _store          # 要改 PLAN_FILE（包级状态），不能只拿值
+
 
 def die(msg: str, code: int = 2, quiet: bool = False) -> NoReturn:
     """参数级的硬错误（与模型层的 PlanError 同语义，只是这一层直接说给人听）。"""
@@ -24,13 +26,13 @@ def die(msg: str, code: int = 2, quiet: bool = False) -> NoReturn:
 
 # ------------------------------------------------ 建立
 def cmd_new(a):
-    d = plan_dir(a.slug)
-    if (d / "plan.json").exists() and not a.force:
-        die(f"{d}/plan.json 已存在（要覆盖加 --force）")
-    d.mkdir(parents=True, exist_ok=True)
+    p = plan_path(a.slug)
+    if p.exists() and not a.force:
+        die(f"{p} 已存在（要覆盖加 --force）")
+    p.parent.mkdir(parents=True, exist_ok=True)
     plan = {
         "schema": "plan-weave/plan@1",
-        "slug": a.slug,
+        "slug": a.slug or p.parent.name,
         "title": a.title or a.slug,
         "goal": a.goal or "",
         "status": "active",
@@ -46,7 +48,7 @@ def cmd_new(a):
     add_participant(plan, "you=human:本人")
     log_event(plan, "created", f"建立 plan：{plan['title']}", actor="agent")
     commit(a.slug, plan, a)
-    print(f"✓ 建立 {d}/plan.json")
+    print(f"✓ 建立 {p}")
 
 def add_participant(plan: dict, spec: str):
     """spec: id=kind:label[@channel]   kind ∈ human|agent（缺省 agent）
@@ -133,7 +135,6 @@ def cmd_set(a):
             ex = {}
         ex["by"] = by
         ex["started"] = ex.get("started") or (a.at or now())
-        ex.setdefault("profile", "default")
         target["exec"] = ex
     elif target.get("exec"):
         prev = (target.get("exec") or {}).get("by") or "?"
@@ -165,11 +166,10 @@ def cmd_exec(a):
         die("exec 要说清谁在做：--by <参与方 id>（要清掉登记用 --unset）")
     if a.task_index is not None and not a.delegation:
         die("--task-index 只在给了 --delegation 时有意义（一个 delegation 下有多个 task-N）")
-    profile = (a.profile or "").strip()
     deleg = (a.delegation or "").strip()
     idx = a.task_index if a.task_index is not None else 0
-    tp = a.transcript or (str(transcript_path(profile, deleg, idx)) if deleg else "")
-    ex = {"by": a.by, "started": a.at or now(), "profile": profile or "default"}
+    tp = (a.transcript or "").strip()
+    ex = {"by": a.by, "started": a.at or now()}
     if deleg:
         ex["delegation"], ex["task_index"] = deleg, idx
     if tp:
@@ -182,6 +182,9 @@ def cmd_exec(a):
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=target["id"])
     commit(a.slug, plan, a)
     print(f"✓ {target['id']} 在做 @{a.by}" + (f" · 线程 {deleg}#{idx}" if deleg else ""))
+    if deleg and not tp:
+        print(f"⚠ 只记了线程号（{deleg}#{idx}），没给 --transcript —— `workers` 只能报「❓ 看不到」；"
+              f"转录在哪由调用方给（loomerto 不猜任何 harness 的目录）")
     if tp and not Path(tp).exists():
         print(f"⚠ 转录现在不在这台机器上：{tp}"
               f"（还没建 / 在别的机器 / 号记错 —— 跑 `workers` 会一直这么报）")
@@ -504,20 +507,40 @@ def cmd_note(a):
     commit(a.slug, plan, a)
     print("✓ 已记入日志")
 
-def cmd_list(a):
-    if not plans_root().exists():
+def _plan_row(p: Path):
+    pp = json.loads(p.read_text(encoding="utf-8"))
+    done, tot = progress(pp)
+    return (pp["slug"], pp["title"], f"{done}/{tot}", pp.get("status", ""), pp.get("updated_at", "")[:16])
+
+
+def _print_rows(rows):
+    if not rows:
         print("（还没有 plan）")
         return
-    rows = []
-    for d in sorted(plans_root().iterdir()):
-        if (d / "plan.json").exists():
-            p = json.loads((d / "plan.json").read_text(encoding="utf-8"))
-            done, tot = progress(p)
-            rows.append((p["slug"], p["title"], f"{done}/{tot}",
-                         p.get("status", ""), p.get("updated_at", "")[:16]))
     w = max([len(r[0]) for r in rows] + [4])
     for r in rows:
         print(f"{r[0]:<{w}}  {r[2]:>6}  {r[3]:<9} {r[4]}  {r[1]}")
+
+
+def cmd_list(a):
+    """列 plan：给了 `--plan` 就只列这一份；否则列 `--plans-root` 那个库里的全部。"""
+    if plan_file():
+        p = plan_path("")
+        if not p.exists():
+            print(f"（没有这份 plan 数据文件：{p}）")
+            return
+        _print_rows([_plan_row(p)])
+        return
+    root = plans_root()
+    if root is None:
+        print("（没给 plan 库目录 —— `loomerto --plans-root <目录> list`；"
+              "只想列一份用 `loomerto --plan <数据文件> list`）")
+        return
+    if not root.exists():
+        print(f"（{root} 还不存在）")
+        return
+    _print_rows([_plan_row(d / "plan.json") for d in sorted(root.iterdir())
+                 if (d / "plan.json").exists()])
 
 def cmd_current(a):
     plan = load(a.slug)
@@ -761,14 +784,15 @@ def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="loomerto", description="loomerto —— 一份 plan 的工具（谁认领/谁在做/下一步该谁动）")
     ap.add_argument("--no-render", action="store_true",
                     help="只改数据，不刷新 PLAN.md/plan.html/plan.canvas")
+    ap.add_argument("--plan", dest="plan_file", default="",
+                    help="直接指定那一份 plan 数据文件（plan.json；给目录就取其中的 plan.json）"
+                         "—— 等价于 $LOOMERTO_PLAN_FILE；给了它，命令里就不必再写 slug")
     ap.add_argument("--plans-root", dest="plans_root", default="",
-                    help="plan 目录（等价于 $LOOMERTO_PLANS_ROOT）—— 跨机器/多份 plan 库时显式指定")
-    ap.add_argument("--profile", default="",
-                    help="用某个 Hermes profile 的 plans（等价于 $LOOMERTO_PROFILE），例：--profile plan-weave")
+                    help="一份 plan 库的目录（等价于 $LOOMERTO_PLANS_ROOT）—— 库里有多份 plan、要按 slug 选时才用")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("new", help="新建 plan")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--title")
     p.add_argument("--goal")
     p.add_argument("--owner", action="append", help="id=kind:label[:channel]，可多次")
@@ -778,7 +802,7 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(f=cmd_new)
 
     p = sub.add_parser("task", help="加任务（节点）")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--title", required=True)
     p.add_argument("--id")
     p.add_argument("--owner", default="")
@@ -788,7 +812,7 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(f=cmd_task)
 
     p = sub.add_parser("block", help="给任务加块（文档）")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--task", required=True)
     p.add_argument("--title", required=True)
     p.add_argument("--kind", default="impl", choices=KINDS)
@@ -804,9 +828,9 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(f=cmd_block)
 
     p = sub.add_parser("set", help="改状态")
-    p.add_argument("slug")
-    p.add_argument("ref")
-    p.add_argument("status")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None)
+    p.add_argument("status", nargs="?", default=None)
     p.add_argument("--note", default="")
     p.add_argument("--owner", default="")
     p.add_argument("--by", default="")
@@ -816,37 +840,37 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--done-when", dest="done_when", action="append", default=[],
                    help="改判据，可多次")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_set)
+    p.set_defaults(f=cmd_set, shift=["ref", "status"])
 
     p = sub.add_parser("exec", aliases=["doing"],
                        help="登记谁在做 + 那条子代理线程（认领之外的第二个身份）")
-    p.add_argument("slug")
-    p.add_argument("ref", help="块或任务：T-002#B-001 / B-001 / T-002")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None,
+                   help="块或任务：T-002#B-001 / B-001 / T-002")
     p.add_argument("--by", default="", help="谁在做（参与方 id：agent 名或人）")
     p.add_argument("--delegation", default="", help="子代理线程号 deleg_xxxxxxxx")
     p.add_argument("--task-index", dest="task_index", type=int, default=None,
                    help="这条线程下第几个 task（默认 0）")
-    p.add_argument("--profile", default="",
-                   help="这条线程属于哪个 profile（默认 default）—— 用来算转录路径")
     p.add_argument("--transcript", default="",
-                   help="转录文件绝对路径；不给就按 --profile + 线程号算")
+                   help="转录文件路径（这一条线程的日志在哪）—— 转录放在哪是调用方的事，"
+                        "loomerto 不猜任何 harness 的目录；不给就只登记线程号")
     p.add_argument("--note", default="", help="在做的是哪一段（会记进日志）")
     p.add_argument("--at", default="", help="补记时间（ISO8601），默认现在")
     p.add_argument("--unset", action="store_true", help="清掉线程登记（线程结束 / 交回别人）")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_exec)
+    p.set_defaults(f=cmd_exec, shift=["ref"])
 
     p = sub.add_parser("rm", help="真删一个块或任务（取消 ≠ 删除；被引用时默认拒删）")
-    p.add_argument("slug")
-    p.add_argument("ref")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None)
     p.add_argument("--note", default="", help="为什么删（会记进日志）")
     p.add_argument("--force", action="store_true", help="已被别的块引用时仍然删")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_rm)
+    p.set_defaults(f=cmd_rm, shift=["ref"])
 
     p = sub.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
-    p.add_argument("slug")
-    p.add_argument("ref", help="要展开的块：T-001#B-002 或 B-002")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="要展开的块：T-001#B-002 或 B-002")
     p.add_argument("--title", default="", help="新任务的标题（默认沿用块标题）")
     p.add_argument("--step", action="append", default=[],
                    help="追加的后续步骤，可多次、按顺序：标题 :: 做什么 :: 判据1;判据2 :: kind")
@@ -854,12 +878,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="", help="为什么展开（会记进日志）")
     p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_expand)
+    p.set_defaults(f=cmd_expand, shift=["ref"])
 
     p = sub.add_parser("collapse", aliases=["compress"],
                        help="把一个任务压成一个块（默认回展开前的位置）")
-    p.add_argument("slug")
-    p.add_argument("ref", help="要压缩的任务：T-001")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="要压缩的任务：T-001")
     p.add_argument("--into", default="",
                    help="压出来的块放哪：块 ref（插到它之后）或任务 ref（追加到末尾）")
     p.add_argument("--keep-task", dest="keep_task", action="store_true",
@@ -874,49 +898,50 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="各块状态不一致时仍然压")
     p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_collapse)
+    p.set_defaults(f=cmd_collapse, shift=["ref"])
 
     p = sub.add_parser("note", help="写一条总结/决定进日志")
-    p.add_argument("slug")
-    p.add_argument("text")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("text", nargs="?", default=None)
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
                             "block", "status", "expand", "collapse"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_note)
+    p.set_defaults(f=cmd_note, shift=["text"])
 
     p = sub.add_parser("digest", help="生成提醒/摘要文本")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--to", default="", help="只提醒某个参与方（id，或 you）")
     p.add_argument("--format", default="discord", choices=["discord", "md"])
     p.add_argument("--stale-hours", type=float, default=24)
     p.set_defaults(f=cmd_digest)
 
     p = sub.add_parser("render", help="重新生成 PLAN.md / plan.html / plan.canvas")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.set_defaults(f=cmd_render)
 
     p = sub.add_parser("check", help="图质量检查")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--stale-hours", type=float, default=24)
     p.set_defaults(f=cmd_check)
 
     p = sub.add_parser("current", help="现在可动的块")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.set_defaults(f=cmd_current)
 
     p = sub.add_parser("show", aliases=["info"],
                        help="看一个块/一条任务的详细信息（只读：状态·认领·在做·线程·做什么·判据·依赖·run）")
-    p.add_argument("slug")
-    p.add_argument("ref", help="块或任务：T-002#B-001 / B-001 / T-002")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None,
+                   help="块或任务：T-002#B-001 / B-001 / T-002")
     p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
     p.add_argument("--runs", type=int, default=5, help="列最近几条 run（0 = 全列，默认 5）")
-    p.set_defaults(f=cmd_show)
+    p.set_defaults(f=cmd_show, shift=["ref"])
 
     p = sub.add_parser("workers", aliases=["threads"],
                        help="检查每个在途块登记的子代理线程是否还在动（已结束/记错 ⇒ exit 1）")
-    p.add_argument("slug")
+    p.add_argument("slug", nargs="?", default="")
     p.add_argument("--stale-min", dest="stale_min", type=float, default=30,
                    help="转录多久没写一行就算静默（默认 30 分钟）")
     p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
@@ -928,18 +953,70 @@ def _parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _slug_of_data_file() -> str:
+    """数据文件里的 slug（文件还没有 / 读不动就取它所在目录名）。"""
+    p = plan_path("")
+    try:
+        return json.loads(p.read_text(encoding="utf-8")).get("slug") or p.parent.name
+    except (OSError, ValueError):
+        return p.parent.name
+
+
+def _apply_file_mode(a) -> int:
+    """单文件模式（`--plan <数据文件>`，或当前目录正好有 plan.json）：把 slug 那一位让出来。
+
+    这些命令的第一个位置参数本来是 slug —— 文件模式下它其实是**下一个**参数
+    （`set <ref> <status>` / `exec <ref>` / `show <ref>` / `note <text>`…），所以整体左移一位：
+    `loomerto --plan ./plan.json set T-001#B-002 done`。返回非 0 表示已经报错，当退出码用。
+    """
+    dests = list(getattr(a, "shift", []) or [])
+    if dests:
+        if getattr(a, dests[-1], None) not in (None, ""):
+            print(f"文件模式（--plan）下不要再写 slug —— 位置参数整体左移一位，例：\n"
+                  f"  loomerto --plan <plan 数据文件> {a.cmd} "
+                  + " ".join(f"<{d}>" for d in dests), file=sys.stderr)
+            return 2
+        vals = [getattr(a, "slug", "")] + [getattr(a, d) for d in dests]
+        for d, v in zip(dests, vals):
+            setattr(a, d, v)
+        a.slug = ""
+        missing = [d for d in dests if getattr(a, d) in (None, "")]
+        if missing:
+            print(f"{a.cmd} 要 " + " ".join(f"<{d}>" for d in dests)
+                  + "（文件模式下不用写 slug）", file=sys.stderr)
+            return 2
+    real = _slug_of_data_file()
+    if a.slug and a.cmd != "new" and a.slug != real:
+        print(f"--plan 指的是 '{real}'，命令里却还写着 slug '{a.slug}' —— "
+              f"文件模式下不要再写 slug", file=sys.stderr)
+        return 2
+    if not a.slug:
+        a.slug = real
+    return 0
+
+
 def main(argv=None):
     """任何 harness 的入口：返回退出码（0/1/2），自己不 sys.exit。"""
     a = _parser().parse_args(argv)
-    # 显式旗标优先：--plans-root 直接定死；--profile 则要让 profile 那条生效（清掉可能已设的 plans root）
+    # 定位这份 plan：`--plan` 直接钉死那一份数据文件；`--plans-root` 给一份 plan 库的目录
+    if getattr(a, "plan_file", ""):
+        _store.PLAN_FILE = str(Path(a.plan_file).expanduser())
+        if getattr(a, "plans_root", ""):
+            print("⚠ 同时给了 --plan 与 --plans-root —— 按 --plan 算", file=sys.stderr)
     if getattr(a, "plans_root", ""):
         os.environ["LOOMERTO_PLANS_ROOT"] = a.plans_root
-    elif getattr(a, "profile", ""):
-        os.environ.pop("LOOMERTO_PLANS_ROOT", None)
-        os.environ["LOOMERTO_PROFILE"] = a.profile
     try:
         if a.cmd == "list":
             return cmd_list(a) or 0
+        if _store.file_mode():
+            rc = _apply_file_mode(a)
+            if rc:
+                return rc
+        elif not getattr(a, "slug", ""):
+            print("要给 slug（或改用 `--plan <plan 数据文件>`）：\n"
+                  "  loomerto --plans-root <目录> <子命令> <slug>\n"
+                  "  loomerto --plan <plan 数据文件> <子命令>", file=sys.stderr)
+            return 2
         r = a.f(a)
         return r if isinstance(r, int) else 0
     except PlanError as e:          # 模型层/存储层的硬错误：说给人听 + 用建议的退出码
