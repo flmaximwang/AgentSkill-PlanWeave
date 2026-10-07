@@ -154,6 +154,11 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 4. **验证**：`plan.py check <slug>` —— 环 / 悬空依赖 / 无主就绪块 / 悬置超时。
    **有错误就别往下走**；告警要念给用户听。
 5. **提醒**：`plan.py digest <slug> --to <参与方>`，纪律见 skill `remind-collaborators`。
+6. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
+   - `check-plan-node-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
+   - `check-plan-temp-hygiene`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
+     `py task` / `py block` / `py set` 命令补一个收尾任务节点与「临时文件：…」声明。
+   改完重跑；两条都要 `exit 0` 才往下走。
 
 改状态时 `plan.py` 会自动重渲染三个视图（`--no-render` 可跳过）。
 
@@ -313,6 +318,7 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 |---|---|
 | `scripts/plan.py` | 全部命令：模型 / 状态机 / digest / 三视图渲染 |
 | `assets/plan.html` | 可视化模板（`/*__PLAN_DATA__*/null` 处注入 plan.json） |
+| 兄弟 skill | `check-plan-node-commands`（每个块的命令与变量定义）、`check-plan-temp-hygiene`（临时文件闭环）、`remind-collaborators`（提醒纪律） |
 
 静态图（给聊天/群用，**只在被明确索取时才做**）落在 plan 目录的 `plan.png`；默认交付是 `file://`
 看板 URL（**不发附件、不起服务**），生成方法见文末「坑」。

@@ -5,6 +5,8 @@ Hermes profile `plan-weave`（角色：**协作计划记录员**）的 skill 合
 这个 bot 不亲手干活：用户同时和人多、agent 多地推进一件事时，它把「现在到哪了、下一步该谁动」
 固化进**一份** plan 文件，让下一个接手的人或 agent 不必去读聊天记录。所以这套 skill 的题材是
 **状态的单一真相与其分发**（记录 → 派生视图 → 只推该动的那一件事 → 后进来的人怎么用只读证据接上）。
+交付前另有**两条校验**：这份 plan 会不会留下没人清的临时文件（`check-plan-temp-hygiene`）、
+每个节点有没有可直接执行的命令与变量定义（`check-plan-node-commands`）。
 
 **public 仓库**：内容与具体机器无关，可分享。
 
@@ -13,10 +15,12 @@ Hermes profile `plan-weave`（角色：**协作计划记录员**）的 skill 合
 | skill | 用途 | 可执行入口 |
 |---|---|---|
 | [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `scripts/plan.py <command> <slug>` |
-| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时还要 `plan.html` 的 URL+附件），以及「什么时候不推」的静默与去重纪律 | `plan.py digest <slug> --to <参与方>` |
+| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `plan.py digest <slug> --to <参与方>` |
+| [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
+| [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
 | [intake-a-running-collaboration](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
 
-三个 skill 的类目不统一（两个 `plan-weave`、一个 `agent-orchestration`），因为类目是**安装落点**，
+五个 skill 的类目不统一（四个 `plan-weave`、一个 `agent-orchestration`），因为类目是**安装落点**，
 而 `intake-a-running-collaboration` 与 `agent-orchestration` 类目下的
 `agent-to-agent-handoff` / `agent-handoff-and-review` / `agent-handoff-spec` 是同一套协作程序的两半。
 仓库内路径的第一段与安装类目保持一致，安装后 profile 里的树形与仓库逐字节相同。
@@ -26,6 +30,8 @@ Hermes profile `plan-weave`（角色：**协作计划记录员**）的 skill 合
 ```bash
 for s in "plan-weave/maintain-a-shared-plan:plan-weave" \
          "plan-weave/remind-collaborators:plan-weave" \
+         "plan-weave/check-plan-temp-hygiene:plan-weave" \
+         "plan-weave/check-plan-node-commands:plan-weave" \
          "agent-orchestration/intake-a-running-collaboration:agent-orchestration"; do
   path="${s%%:*}"; cat="${s##*:}"
   hermes --profile plan-weave skills install \
@@ -36,9 +42,9 @@ done
 `--category` **只在安装时读取**：换分类 = uninstall + 带新 `--category` 重装。skill 目录是 per-profile 的
 （`$HERMES_HOME/profiles/plan-weave/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
 
-**当前状态：** `plan-weave` profile 已按上表类目装好，hub 安装、有 lock 条目，`source_revision` 随 `main`
+**当前状态：** `plan-weave` profile 已按上表类目装好（5 条），hub 安装、有 lock 条目，`source_revision` 随 `main`
 （安装 pin 到当时的 commit，之后 `hermes skills check` / `hermes skills update <name>` 直接可用）。
-**本仓库是这三个 skill 唯一的 source of truth**：改内容改这里，`git push` 后
+**本仓库是这五个 skill 唯一的 source of truth**：改内容改这里，`git push` 后
 `hermes skills update <name>` 取新版。
 
 > 搬进来之前它们只活在那个 profile 的 `skills/` 目录里（**无 lock 条目** —— 没有仓库、没有更新路径，
@@ -109,3 +115,40 @@ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 
 - 可直接抄的命令片段（thread 溢出文件解析、`/proc` 判活、双测速率、抽样换算、mtime 归属）在
   `references/read-only-evidence-recipes.md`；所有远端检查都套在 `perl -e 'alarm shift; exec @ARGV' 60`
   里（macOS 没有 GNU `timeout`，挂住的命令永远不会返回）。
+
+## skills/plan-weave/check-plan-temp-hygiene
+
+**交付前的第一问：跑完之后会不会在盘上留下一堆没人管的临时文件。** 判据三问，每问都给证据：
+
+- **生产**：扫 doc / done_when / cmds / 产物 / run / 日志，找会写临时或中间产物的形态（`/tmp`、
+  `$TMPDIR`、`scratch`、`~/.cache`、`_migrate`、`.tmp`/`.part`、`临时文件`/`中间产物`/`暂存目录`…）。
+- **声明**：块 doc 里一行 `临时文件：<路径/glob>`、产物字段指向临时路径、或 `temps` 字段。
+- **收尾**：一个节点在**流程上排在所有生产块之后**、负责删除它们，且 `done_when` 可核验。
+
+结论四值：`✅ 闭环` / `⚠️ 部分`（收尾在，但声明缺项或位置偏早）/ `❌ 不闭环`（有生产、没人收尾，exit 1）/
+`➖ 无需清理（没检测到）`。**`➖` 是「没查出来」，不是「没有」** —— 判据只看文本，拿不准就加 `--strict`。
+
+- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `py task` / `py block` / `py set` 命令
+  （含任务号、`--deps`、清单与判据骨架），照抄即可把「删除临时文件」这个收尾任务节点建起来。
+- **同音词是主要误报源**（第一版实测误判 4 份真 plan）：「暂存」= git staging、「副本」= 工作副本、
+  「残留」= 没留下坏链接、「截图」= 笔记里的附件 —— 都不是临时文件；强判据只认能指认
+  「临时 / 中间 / 缓存」性质的字样。
+- 实测基线（2026-10-07，9 份 plan / 337 块）：`➖` 6 份 · `⚠️` 1（drive-sync）· `❌` 2
+  （lab-migration 的 `/Volumes/SSD/_migrate/*` 暂存区、repo05-annex-recovery 的 `/tmp/quarantine_move.sh`）。
+
+## skills/plan-weave/check-plan-node-commands
+
+**交付前的第二问：每个节点是不是都能照抄一条命令直接跑。** 两条判据：每个块至少一条可直接执行的命令
+（`cmds` 字段 / doc 的代码围栏 / 行内反引号，三处任一）；命令里每个可替换变量都有明确来源（块 `vars`、
+plan 级 `vars`、块 doc 的 `<名> = 值` 定义行、同块赋值）。**缺则 `❌ 不批准`（exit 1）**，并逐块给出
+出处、证据原文与补法。
+
+- **命令形态识别**：只认「分段首词是程序 / 路径 / 变量」的行 —— 围栏里的目录树、预期输出、笔记片段不算；
+  首词本机不认识只给 `⚠️`（可能装在别的机器上）；脚本名没带路径（如 `scripts/x.sh`）也 `⚠️`
+  （照抄粘贴会 `command not found`）。
+- **环境变量不是待填变量**：`$HOME`、`$TMPDIR` 这些属 `AMBIENT_ENV`，不要求定义（第一版把 `$HOME`
+  判成缺定义，在 lab-migration 上凭空造出 79 条「变量未定义」）。
+- **中文描述型占位符直接判 ❌**：`<路径>`、`<目标目录>` 是「填不进去的描述」，不是变量名。
+- 实测基线（2026-10-07，9 份 plan / 276 个在册块，另 61 块已取消默认跳过）：**9/9 都不批准** ——
+  缺命令 133 块、变量未定义 80 块、中文占位 99 处，只有 42 块全过。这是口径的预期结果：
+  现在的块文档写的是散文，没人写命令。
