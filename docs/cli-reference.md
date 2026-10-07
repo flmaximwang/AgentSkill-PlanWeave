@@ -1,6 +1,6 @@
 # `plan.py` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `09250db`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `c0ad8c8`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -11,9 +11,9 @@
 三种等价写法（实现都在仓库根的 `loomerto` 包里，见 [`architecture.md`](architecture.md)）：
 
 ```bash
-loomerto <子命令> [参数]                        # 装过包：uv tool install --editable <repo> → ~/.local/bin/loomerto
-python3 -m loomerto <子命令> [参数]              # 不装：在仓库根目录里跑
-python3 <skill>/scripts/plan.py <子命令> [参数]  # skill 侧的薄壳：自己交代 plans 根、自己找包
+loomerto <全局旗标> <子命令> [参数]            # 装过包：uv tool install --editable <repo> → ~/.local/bin/loomerto
+python3 -m loomerto <全局旗标> <子命令> [参数]  # 不装：在仓库根目录里跑
+python3 <skill>/scripts/plan.py <全局旗标> <子命令> [参数]   # skill 侧的薄壳：自己交代 plans 根、自己找包
 ```
 
 ```bash
@@ -21,11 +21,22 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 ```
 
 - 纯 stdlib、零依赖、**不需要服务**；`requires-python >= 3.9`。
-- **全局旗标必须写在子命令之前**（写在后面会被当成未知参数）：
-  `--no-render`（只改数据不刷视图）· `--plans-root <路径>`（直接指定 plan 目录）·
-  `--profile <名字>`（用 `~/.hermes/profiles/<名字>/workspace/plans`）。
-  例：`loomerto --profile plan-weave current my-plan`。
-  不显式给的话按 `$LOOMERTO_PLANS_ROOT` → `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans` 找。
+- **一份 plan 在哪，永远由调用方说清** —— loomerto 不认任何 harness 的目录，也**没有 profile 这个概念**：
+  - `--plan <plan 数据文件>`（= `$LOOMERTO_PLAN_FILE`）：只认这一份；**此后命令里不写 slug**。
+    给目录（或目录路径）也行，按其中的 `plan.json` 算；数据文件叫什么名都行（`mine.json` 也可以）。
+    例：`loomerto --plan ./plan.json set T-001#B-002 done`。
+  - `--plans-root <目录>`（= `$LOOMERTO_PLANS_ROOT`）：一份 plan 库（里面每个 slug 一个目录）；命令里**要 slug**。
+    例：`loomerto --plans-root ~/plans current my-plan`。
+  - 两个都不给：按**当前目录的 `plan.json`** 算（它存在才认，等价于 `--plan ./plan.json`）；都没有就退 2
+    并把该给什么打印出来。`new` 必须显式说落在哪（`--plan <路径>/plan.json` 或 `--plans-root <目录>` + slug）。
+  - 两个都给时**按 `--plan` 算**（打一行 ⚠）。**全局旗标必须写在子命令之前**（写后面会被当成未知参数）；
+    `--no-render` = 只改数据不刷视图。
+- **文件模式的位置参数左移一位**：命令的第一个位置参数本来是 `slug`，给了 `--plan` 就不写它 ——
+  `set <slug> <ref> <status>` → `<ref> <status>`、`exec|show|rm|expand|collapse <slug> <ref>` → `<ref>`、
+  `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
+  `task` / `block`）文件模式下**不写位置参数**。多写一个（如 `show myplan T-003#B-004`）退 2，
+  并点明「文件模式下不要再写 slug」。
+- `list`：给了 `--plan` 就只列这一份；否则列 `--plans-root` 库里的全部。
 - `ref` 的写法：`T-002`（任务）/ `T-002#B-001`（块）/ `B-001`（块内唯一后缀）。
 - **退出码**：参数错、找不到对象 → **2**；`check` 发现图错误 → **1**；`workers` 发现 ⚠/❌ → **1**；其余 → **0**。
   出错原因走 stderr（中文），stdout 只放给人/给 agent 读的结果。
@@ -34,9 +45,10 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 
 ### `new` — 新建一份 plan
 `py new <slug> [--title TITLE] [--goal GOAL] [--owner OWNER]… [--digest-hours 6] [--quiet-hours 23:00-08:00] [--force]`
+- 落在哪必须说清：`--plan <路径>/plan.json`（就建这个文件；`slug` 可省，取目录名）或 `--plans-root <目录>` + `slug`。
 - `--owner` 可多次，写法 `id=kind:label[@channel]`（`kind` ∈ `human|agent`），例：
   `--owner "rdm-assistance=agent:RdmAsst3813"`；不给 kind 时按 agent 处理。
-- 落盘 `<plans>/<slug>/plan.json` 并渲出三个视图；同 slug 已存在时**必须 `--force`**。
+- 落盘后渲出三个视图；目标已存在时**必须 `--force`**。
 - 注意：`new` 之后无条件再补一个 `you=human:本人`，会覆盖同 id 的 `--owner`（要带 Discord 身份就另起 id）。
 
 ### `task` — 加一条任务（泳道）
@@ -79,9 +91,11 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
   **换人**（`--by` 与原来不同）会连带清掉旧的 `delegation`/`transcript`；改为 `done`/`cancelled`/`pending` 会清空 `exec`。
 
 ### `exec` — 谁在做 + 那条子代理线程（`doing` 是它的别名）
-`py exec <slug> <块/任务ref> --by 谁 [--delegation deleg_xxxxxxxx] [--task-index N] [--profile <profile>] [--transcript <绝对路径>] [--note "…"] [--at ISO] [--unset]`
-- 转录路径不给就按 `--profile` + 线程号算：`<hermes home>/cache/delegation/live/<deleg>/task-<n>.log`
-  （default profile 的 home 是 `~/.hermes`，其余是 `~/.hermes/profiles/<profile>/`）；跨机器用 `--transcript` 直给。
+`py exec <slug> <块/任务ref> --by 谁 [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--note "…"] [--at ISO] [--unset]`
+- **转录在哪由调用方给**（`--transcript <路径>`）：loomerto 不猜任何 harness 的目录。Hermes 侧的写法是
+  `<hermes home>/cache/delegation/live/<deleg>/task-<n>.log`（default profile 的 home 是 `~/.hermes`，
+  其余是 `~/.hermes/profiles/<名字>/`），这个约定写在 skill 里，不写在包里。
+- 不给 `--transcript` 时只登记线程号（打一行 ⚠）——`workers` 只能报「❓ 看不到」，因为没路径可读。
 - 登记时会当场检查转录在不在，不在就打印一行 ⚠（不拦）。
 - `--unset` 清掉登记（线程收工 / 交回别人）。
 - 目前是**自由登记**：不校验 `--by` 是不是协作者、也不是必须给 pid（R-04 待做）。

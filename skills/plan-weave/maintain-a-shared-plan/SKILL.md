@@ -35,7 +35,7 @@ metadata:
 `plan.py` 落盘就会覆盖）。工具：
 
 ```
-$P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
+$P = <profile>/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
 ```
 
 **实现在仓库根的 loomerto 包里**（纯 stdlib、零依赖）：model（模型与派生规则，纯函数）/ store（磁盘 +
@@ -45,8 +45,13 @@ $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scri
 四条都不成立时会打印该装哪一条（退出码 2），**不会抛看不懂的 ImportError**。
 包没装的话先装：`uv tool install --editable <repo>`（本机已装好，`loomerto` / `plan` 在 `~/.local/bin`）。
 **别的 harness 不必走命令行**：装过包就能 `from loomerto import store` 直接读写同一份 plan.json。
-`loomerto`（或 `python3 -m loomerto`）与 `$P` 完全等价；跨 profile / 多份 plan 库时用
-`loomerto --profile <名字>` 或 `--plans-root <路径>`。
+`loomerto`（或 `python3 -m loomerto`）与 `$P` 完全等价。
+**一份 plan 在哪，永远由调用方说清**（包不认任何 harness 的目录）：
+
+```bash
+loomerto --plan <plan 数据文件> <子命令> …          # 只认这一份；命令里不用再写 slug
+loomerto --plans-root <目录> <子命令> <slug> …      # 一份库里有好几份时才用
+```
 
 ## 模型（借自 PlanWeave）
 
@@ -167,16 +172,19 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 
 ```bash
 py exec <slug> T-002#B-001 --by default --delegation deleg_05e3c787 --task-index 0 \
-        --note "前半段：写脚本"    # 转录路径按 --profile 自动算（默认 default），也可 --transcript 直接给绝对路径
+        --transcript <转录文件绝对路径> --note "前半段：写脚本"
+                                    # 转录在哪由你给（Hermes 侧 = <hermes home>/cache/delegation/live/<deleg>/task-<n>.log）
+                                    # 不给 --transcript 就只记线程号，workers 只能报「❓ 看不到」
 py exec <slug> T-002#B-001 --unset  # 线程收工 / 交回别人
 py workers <slug>                   # ← 检查：每个在途块登记的线程还在动吗
 py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含认领时刻) · 在做+线程+转录 · 判据 · run（只读）
 ```
 
 - **线程号从哪来**：`delegate_task` 返回的 `delegation_id`（`deleg_xxxxxxxx`）与它在该批次里的
-  `task_index`（本文档一律写成 `deleg_05e3c787#0` 这种形式）。转录文件 = hermes home 下的
+  `task_index`（本文档一律写成 `deleg_05e3c787#0` 这种形式）。**转录路径由调用方登记**
+  （`exec … --transcript <路径>`）—— 包不猜 harness 的目录；Hermes 侧的对应写法是 hermes home 下的
   `cache/delegation/live/<delegation_id>/task-<n>.log`（default profile 的 home 是 `~/.hermes`，
-  其余是 `~/.hermes/profiles/<profile>/`）；给了 `--profile` 就自动算出路径。
+  其余是 `~/.hermes/profiles/<名字>/`）。不给 `--transcript` 时只记线程号，`workers` 会报「❓ 看不到」。
 - **`workers` 七种结论，一个都不许合并**：`✅ 在动`（转录最近还在写）/ `⏳ 静默`（超 `--stale-min`
   —— 默认 30 分钟没写一行，可能卡住或已死）/ `⚠ 线程已结束`（manifest 说这条线程已 completed/failed，
   而块还挂在 running ⇒ **该对账**）/ `❌ 号记错`（delegation 目录在，但没有这个 task 的转录）/
@@ -221,6 +229,10 @@ py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含
 
 ```bash
 py() { python3 "$P" "$@"; }
+# 定位这一份 plan（都得自带，包不认任何 harness 的目录）：
+#   --plan <plan 数据文件>    只认这一份；此后命令里**不写 slug**（位置参数整体左移一位）
+#                            例：loomerto --plan ./plan.json set T-001#B-002 done
+#   --plans-root <目录> <slug>  一份库里有好几份时才用
 py list                                  # 所有 plan + 进度
 py new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
    --owner "rdm-assistance=agent:RdmAsst3813"
@@ -231,7 +243,7 @@ py block <slug> --task T-001 --title "…" --kind impl|review|decision|research 
 py set <slug> <ref> <status> [--by x] [--note "…"] [--artifact <路径>] [--at ISO]
       [--doc "…"] [--done-when "…"]      # 事实变了就改块原文，别只写在日志里
 py exec <slug> <块/任务ref> --by <谁> [--delegation deleg_xxxxxxxx] [--task-index N] \
-        [--profile <profile>] [--transcript <绝对路径>] [--note "…"] [--at ISO] [--unset]
+        [--transcript <路径>] [--note "…"] [--at ISO] [--unset]
                                          # 谁在做 + 那条子代理线程（--unset 清掉）
 py workers <slug> [--stale-min 30] [--json]
                                          # 在途块的线程还在动吗（已结束/号记错 ⇒ exit 1）

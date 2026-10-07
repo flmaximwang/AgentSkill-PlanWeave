@@ -10,7 +10,7 @@
 命令行只是**其中一个**适配器。它自己不是 harness 应用 —— 不驻留、不起服务、不持有状态。
 
 **仓库根的 `loomerto/` 是包，`skills/` 是它随包的 skill。** skill 不夹带实现：它只带一个薄壳，
-把「我这个 profile 的 plans 在哪」告诉包，然后调包。两者各自安装、各自更新，但 source of truth 同一处。
+把「这份 plan（或这份 plan 库）在哪」告诉包，然后调包。两者各自安装、各自更新，但 source of truth 同一处。
 
 ## 2. 仓库布局
 
@@ -46,15 +46,16 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
    挂在这里一处就够 —— 不必去每个命令里补。
 3. **视图永远派生**：`PLAN.md` / `plan.html` / `plan.canvas` 都由 `plan.json` 生成，且三个文件
    都走 `atomic_write`（同目录临时文件 + `os.replace`），读者不会看到写了一半的文件。
-4. **plan 目录不靠猜**：`store.plans_root()` 只看显式配置 ——
-   `--plans-root` → `--profile`（⇒ `~/.hermes/profiles/<名字>/workspace/plans`）→ `$LOOMERTO_PLANS_ROOT`
-   → `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans`。
-   **包不推断 profile**（它可能装在 site-packages 里，离任何 profile 都远）；profile 的位置由调用方
-   交给它。模板同理：`$LOOMERTO_TEMPLATE` → 包自带的 `loomerto/assets/plan.html`。
+4. **plan 在哪不靠猜、也不认任何 harness**：`store.plan_path()` 只看显式给的 ——
+   `--plan <plan 数据文件>`（⇒ 就这一份；数据文件叫什么名都行）→ `--plans-root <目录>` 或
+   `$LOOMERTO_PLANS_ROOT` / 调用方塞的 `EMBEDDED_PLANS_ROOT`（⇒ `<目录>/<slug>/plan.json`）→
+   当前目录的 `plan.json`（存在才认）→ 都没有就退 2 并打印该给什么。
+   **包里没有 profile / hermes 这类概念**（它可能装在 site-packages 里，离任何 harness 都远）；
+   路径由调用方交给它。模板同理：`$LOOMERTO_TEMPLATE` → 包自带的 `loomerto/assets/plan.html`。
 
 ## 4. 薄壳契约（`skills/.../scripts/plan.py`）
 
-1. 若调用方没设 `LOOMERTO_PLANS_ROOT`，就把 `<本 skill 所在 home>/workspace/plans` 设上
+1. 若调用方既没给 `--plan` 也没设 `LOOMERTO_PLANS_ROOT`，就把 `<本 skill 所在 home>/workspace/plans` 设上
    （装在 profile 里 = 该 profile 的 plans；在 checkout 里跑 = `<repo>/workspace/plans`，本机自测用）。
 2. 找包：`<home>/loomerto`（checkout 优先：改的是哪份，跑的就是哪份）→ `$LOOMERTO_HOME` →
    已安装的 `import loomerto` → 已装好的 `loomerto` 命令（`os.execv` 交给它）。
@@ -84,8 +85,9 @@ print(render.render_html(plan, store.TEMPLATE))   # 想自定义输出就自己�
 2. **对拉**：新代码与改动前的版本（`git show <旧 sha>:<路径>`）对同一串命令比 stdout / stderr / 退出码，
    再比产出的 `plan.json` / `PLAN.md` / `plan.canvas` / `plan.html`。
 3. **真数据只读回归**：拿装好的那份对真实 plans 跑只读命令（`list` / `workers` / `check`）。
-4. **install 回读**：`uv tool install --editable .` 后从**任意目录**跑 `loomerto --profile plan-weave list`，
-   确认包数据（模板）与 plans 根都对；skill 侧再跑一次薄壳（模拟「装进 profile」的那条路）。
+4. **install 回读**：`uv tool install --editable .` 后从**任意目录**跑 `loomerto --plans-root <某个库> list`
+   与 `loomerto --plan <某个 plan 数据文件> current`，确认包数据（模板）与两种定位方式都对；
+   skill 侧再跑一次薄壳（模拟「装进 profile」的那条路）。
 
 ```bash
 # 本机（macOS，系统 python3 是 3.9.6；旧 pip 装不了 editable，所以用 uv）

@@ -8,7 +8,7 @@ loomerto 是一个 python 包（仓库根目录的 loomerto/）；这个壳只�
 2. **把「本 skill 所在 home」的 plans 根交给包**：`<home>/workspace/plans`。在 profile 里装着的 skill
    ⇒ 那就是这个 profile 的 plans；在仓库 checkout 里跑 ⇒ 那就是 `<repo>/workspace/plans`（本机自测用）。
    包自己不猜路径 —— 它可能装在 site-packages 里，离任何 profile 都远。
-   交代方式有两种，都不覆盖调用方的显式选择（`--plans-root` / `--profile` / 同名环境变量仍优先）：
+   交代方式有两种，都不覆盖调用方的显式选择（`--plan` / `--plans-root` / 同名环境变量仍优先）：
    - 进程内：给包设 `store.EMBEDDED_PLANS_ROOT`；
    - 交给 CLI：在 argv 前面补 `--plans-root <路径>`（调用方自己给过就不补）。
 3. 调 `loomerto.cli.main()`，退出码原样透传。
@@ -54,8 +54,8 @@ def _hand_off_to_cli() -> None:
     import shutil
 
     args = sys.argv[1:]
-    gave = any(a in ("--plans-root", "--profile") or a.startswith(("--plans-root=", "--profile="))
-               for a in args)
+    gave = any(a in ("--plan", "--plans-root")
+               or a.startswith(("--plan=", "--plans-root=")) for a in args)
     if not gave:
         args = ["--plans-root", _PLANS] + args
     for exe in (shutil.which("loomerto"), str(pathlib.Path.home() / ".local" / "bin" / "loomerto")):
