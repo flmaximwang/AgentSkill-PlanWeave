@@ -3,7 +3,8 @@
 **这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-07 · 代码基线 `7b71629`（= worktree `feat/cross-lane-drag` 上的 `move`；本机 default profile 里那五条 skill 与包仍 pin 在 `7a4addd`，等这条分支合回 main 再一起更新）
+> 最后对齐：2026-10-07 · 代码基线 `7b71629`（= main 上的 `move` / 画布跨泳道拖动；本机 default profile 里
+> 那五条 skill 的副本已同步到同一版；`plan-weave` profile 那份仍是旧一代，待随该 bot 退役一并清）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
 ## 0. 文档地图（每个细节去哪看）
@@ -56,7 +57,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 
 | **R-14** | **命令分组**：「`loomerto new` 改成 `loomerto plan new`；`loomerto task` 改成 `loomerto task new`」 | `plan` 与 `task` 成了**分组**（各带子命令表），`plan new` = 原来的 `new`、`task new` = 原来的 `task`；顶层的 `new` / `task` **已不存在**（旧写法会退 2 并列出可用命令）。其余 16 个命令仍是平铺的 | 已落地 `c0ad8c8` 之后 |
 | **R-15** | 「还要有一个 `loomerto open` 命令，用以**从 1 个 json 打开可编辑的画布**」 | `open`：起纯 stdlib 本地服务（只绑 `127.0.0.1`，默认自动挑端口 + 开浏览器），画布可改 标题/做什么/判据/认领人/类型/状态、新建任务与块、拖动改同泳道先后、跨泳道拖 = 换任务（R-16）；写回走 `edits` → `store.commit()`（json + 三视图同步），带 `rev` 冲突检查（409）；**观感与只读看板共用 `loomerto/assets/theme.css`**（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例一份来源，两页不会各长一套）。实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`；协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md) | 已落地 |
-| **R-16** | 「Loomerto 画布现在要支持**跨 task 拖动 block**」（2026-10-07，要求在新 worktree 里实现） | 画布上把卡片拖到**别的泳道**（卡片之间＝插在那张卡前面；泳道空白处＝追加到末尾）即换任务。**块 id 是位置即身份**，所以一次 `move` 做三件事：换 id（目标任务里取最小空位）→ 把引用旧 id 的 `deps` / `review_of` / `expanded_from.block` **一次重接** → **查环，成环就拒改且一个字不写**（400，界面显示原因）。落点是 `edits.move_block`（CLI 与画布共用）；命令入口 = `loomerto move <ref> --task T-00N [--index N]`；协议第六个 op = `move`（响应带 `ref` = 新 id，前端靠它保住选中）。源任务被搬空**不删任务**（空泳道留着）。故意不做：只在画布上做「拖」，不做「拖的同时顺带改字段」 | 已落地（worktree `feat/cross-lane-drag`） |
+| **R-16** | 「Loomerto 画布现在要支持**跨 task 拖动 block**」（2026-10-07，要求在新 worktree 里实现） | 画布上把卡片拖到**别的泳道**（卡片之间＝插在那张卡前面；泳道空白处＝追加到末尾）即换任务。**块 id 是位置即身份**，所以一次 `move` 做三件事：换 id（目标任务里取最小空位）→ 把引用旧 id 的 `deps` / `review_of` / `expanded_from.block` **一次重接** → **查环，成环就拒改且一个字不写**（400，界面显示原因）。落点是 `edits.move_block`（CLI 与画布共用）；命令入口 = `loomerto move <ref> --task T-00N [--index N]`；协议第六个 op = `move`（响应带 `ref` = 新 id，前端靠它保住选中）。源任务被搬空**不删任务**（空泳道留着）。故意不做：只在画布上做「拖」，不做「拖的同时顺带改字段」 | 已落地 `7b71629`（合入 main；装好的 `loomerto` 也会立刻认 `move` —— editable 安装指的就是这个 checkout） |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
