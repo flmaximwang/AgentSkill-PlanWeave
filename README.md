@@ -1,11 +1,12 @@
-# loomery（仓库 `AgentSkill-PlanWeave`）
+# loomerto（仓库 `AgentSkill-PlanWeave`）
 
 **一个 AI 原生的 python 包 + 随包发布的 skill 集**：跨 harness 的协作工作台 —— 一份 `plan.json` 是唯一真相，
 人和 AI 在同一块画布上对齐（谁认领 / 谁在做 / 那条子代理线程 / 下一步该谁动），下一个接手的人或 agent
 不必去读聊天记录。命令行只是它的一层适配器：任何 harness 都能 import 这个包。
 
-- **包**：仓库根目录的 `loomery/`（纯 stdlib、零依赖、`requires-python >= 3.9`）。名字取「织造工场」——
-  多条工作线在这里被织成一块布。
+- **包**：仓库根目录的 `loomerto/`（纯 stdlib、零依赖、`requires-python >= 3.9`）。
+  名字 = **loom + concerto**：协奏曲里**独奏与乐队主次分明、却同演一曲** —— 正对「一个人 + 几个 agent
+  在同一份 plan 上各按自己的声部推进，谁主谁次写在脸上」；loom 那一半接着说多条工作线被织成一块布。
 - **skill**：`skills/` 下的五条（给 Hermes profile `plan-weave` 用，角色是**协作计划记录员**）。
   skill 不夹带实现，只带一个薄壳（`scripts/plan.py`）去调这个包。
 - **public 仓库**：内容与具体机器无关，可分享。
@@ -24,15 +25,15 @@
 **1）包**（让命令能跑；任何 harness 都能 import 它）：
 
 ```bash
-uv tool install --editable .    # 推荐：装出 loomery / plan 两个命令（本机 ~/.local/bin），代码跟着 checkout 走
+uv tool install --editable .    # 推荐：装出 loomerto / plan 两个命令（本机 ~/.local/bin），代码跟着 checkout 走
 # 或
-cd <repo> && python3 -m loomery …        # 不装，直接在仓库里跑
-export LOOMERY_HOME=<repo>               # 让别的 python 也能 import loomery（把它加进 sys.path）
+cd <repo> && python3 -m loomerto …        # 不装，直接在仓库里跑
+export LOOMERTO_HOME=<repo>               # 让别的 python 也能 import loomerto（把它加进 sys.path）
 ```
 
 plan 目录**不靠猜**：`--plans-root <路径>` → `--profile <名字>`（= `~/.hermes/profiles/<名字>/workspace/plans`）
-→ `$LOOMERY_PLANS_ROOT` / `$LOOMERY_PROFILE` → `~/.hermes/workspace/plans`。例：
-`loomery --profile plan-weave list`。
+→ `$LOOMERTO_PLANS_ROOT` / `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans`。例：
+`loomerto --profile plan-weave list`。
 
 **2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 
@@ -52,10 +53,10 @@ done
 （`$HERMES_HOME/profiles/plan-weave/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
 
 **skill 里的 `scripts/plan.py` 是薄壳**：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」交给包，
-再按 `checkout → $LOOMERY_HOME → 已安装的 import → 已装好的 loomery 命令` 的顺序找包；四条都不成立时，
+再按 `checkout → $LOOMERTO_HOME → 已安装的 import → 已装好的 loomerto 命令` 的顺序找包；四条都不成立时，
 它会明确告诉你 `uv tool install --editable <repo>`（而不是抛一个看不懂的 ImportError）。
 
-**当前状态：** 包已在本机装好（`uv tool install --editable`，`loomery` / `plan` 在 `~/.local/bin`）；
+**当前状态：** 包已在本机装好（`uv tool install --editable`，`loomerto` / `plan` 在 `~/.local/bin`）；
 `plan-weave` profile 的五条 skill 都是 hub 安装、有 lock 条目，`source_revision` 随 `main`。
 **本仓库是这些 skill 与这个包的唯一 source of truth**：改这里 → `git push` → `hermes skills update <name>` 取新版。
 
@@ -63,8 +64,8 @@ done
 
 | skill | 用途 | 可执行入口 |
 |---|---|---|
-| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomery <command> <slug>`（skill 里另有薄壳 `scripts/plan.py`） |
-| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomery digest <slug> --to <参与方>` |
+| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomerto <command> <slug>`（skill 里另有薄壳 `scripts/plan.py`） |
+| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomerto digest <slug> --to <参与方>` |
 | [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
 | [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
 | [intake-a-running-collaboration](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
@@ -121,7 +122,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `collapse` 压回**一个块**
   （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
   一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
-- **实现**在仓库根的 `loomery/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
+- **实现**在仓库根的 `loomerto/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
   [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 
 ## skills/plan-weave/remind-collaborators

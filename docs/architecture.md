@@ -9,16 +9,16 @@
 （Hermes / 别的 agent 框架 / 一个本地 web 服务 / 一个脚本）都能直接 import 它；
 命令行只是**其中一个**适配器。它自己不是 harness 应用 —— 不驻留、不起服务、不持有状态。
 
-**仓库根的 `loomery/` 是包，`skills/` 是它随包的 skill。** skill 不夹带实现：它只带一个薄壳，
+**仓库根的 `loomerto/` 是包，`skills/` 是它随包的 skill。** skill 不夹带实现：它只带一个薄壳，
 把「我这个 profile 的 plans 在哪」告诉包，然后调包。两者各自安装、各自更新，但 source of truth 同一处。
 
 ## 2. 仓库布局
 
 ```
 AgentSkill-PlanWeave/                 ← 仓库根 = python 项目根
-├── pyproject.toml                    包元数据 + console scripts（loomery / plan）+ 包数据
-├── loomery/                          ★ python 包（纯 stdlib、零依赖、>=3.9）
-│   ├── __init__.py   __main__.py      `python -m loomery` 的入口
+├── pyproject.toml                    包元数据 + console scripts（loomerto / plan）+ 包数据
+├── loomerto/                          ★ python 包（纯 stdlib、零依赖、>=3.9）
+│   ├── __init__.py   __main__.py      `python -m loomerto` 的入口
 │   ├── assets/plan.html              可视化模板（**包数据**，跟着包走）
 │   ├── model.py     数据模型与派生规则：状态机、block_deps/edge_deps、ready/waiting 派生、
 │   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
@@ -47,24 +47,24 @@ AgentSkill-PlanWeave/                 ← 仓库根 = python 项目根
 3. **视图永远派生**：`PLAN.md` / `plan.html` / `plan.canvas` 都由 `plan.json` 生成，且三个文件
    都走 `atomic_write`（同目录临时文件 + `os.replace`），读者不会看到写了一半的文件。
 4. **plan 目录不靠猜**：`store.plans_root()` 只看显式配置 ——
-   `--plans-root` → `--profile`（⇒ `~/.hermes/profiles/<名字>/workspace/plans`）→ `$LOOMERY_PLANS_ROOT`
-   → `$LOOMERY_PROFILE` → `~/.hermes/workspace/plans`。
+   `--plans-root` → `--profile`（⇒ `~/.hermes/profiles/<名字>/workspace/plans`）→ `$LOOMERTO_PLANS_ROOT`
+   → `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans`。
    **包不推断 profile**（它可能装在 site-packages 里，离任何 profile 都远）；profile 的位置由调用方
-   交给它。模板同理：`$LOOMERY_TEMPLATE` → 包自带的 `loomery/assets/plan.html`。
+   交给它。模板同理：`$LOOMERTO_TEMPLATE` → 包自带的 `loomerto/assets/plan.html`。
 
 ## 4. 薄壳契约（`skills/.../scripts/plan.py`）
 
-1. 若调用方没设 `LOOMERY_PLANS_ROOT`，就把 `<本 skill 所在 home>/workspace/plans` 设上
+1. 若调用方没设 `LOOMERTO_PLANS_ROOT`，就把 `<本 skill 所在 home>/workspace/plans` 设上
    （装在 profile 里 = 该 profile 的 plans；在 checkout 里跑 = `<repo>/workspace/plans`，本机自测用）。
-2. 找包：`<home>/loomery`（checkout 优先：改的是哪份，跑的就是哪份）→ `$LOOMERY_HOME` →
-   已安装的 `import loomery` → 已装好的 `loomery` 命令（`os.execv` 交给它）。
+2. 找包：`<home>/loomerto`（checkout 优先：改的是哪份，跑的就是哪份）→ `$LOOMERTO_HOME` →
+   已安装的 `import loomerto` → 已装好的 `loomerto` 命令（`os.execv` 交给它）。
 3. 四条都不成立 ⇒ 打印该装哪一条（`uv tool install --editable <repo>` 等），退出码 2。
    **不抛 ImportError** —— 那种报错会把人引到「谁把这个包删了」，而不是「装它」。
 
 ## 5. 怎么接一个新前端（R-02 画布写回 / R-06 web 服务）
 
 ```python
-from loomery import store, model, render      # 装过包就能直接 import
+from loomerto import store, model, render      # 装过包就能直接 import
 
 plan = store.load("my-plan")             # 读
 for t, b in model.all_blocks(plan): ...  # 算（派生状态一律用 model 的函数，别自己实现一份）
@@ -84,11 +84,11 @@ print(render.render_html(plan, store.TEMPLATE))   # 想自定义输出就自己�
 2. **对拉**：新代码与改动前的版本（`git show <旧 sha>:<路径>`）对同一串命令比 stdout / stderr / 退出码，
    再比产出的 `plan.json` / `PLAN.md` / `plan.canvas` / `plan.html`。
 3. **真数据只读回归**：拿装好的那份对真实 plans 跑只读命令（`list` / `workers` / `check`）。
-4. **install 回读**：`uv tool install --editable .` 后从**任意目录**跑 `loomery --profile plan-weave list`，
+4. **install 回读**：`uv tool install --editable .` 后从**任意目录**跑 `loomerto --profile plan-weave list`，
    确认包数据（模板）与 plans 根都对；skill 侧再跑一次薄壳（模拟「装进 profile」的那条路）。
 
 ```bash
 # 本机（macOS，系统 python3 是 3.9.6；旧 pip 装不了 editable，所以用 uv）
-uv tool install --editable .        # → ~/.local/bin/{loomery,plan}
-python3 -m loomery --plans-root <plans> list
+uv tool install --editable .        # → ~/.local/bin/{loomerto,plan}
+python3 -m loomerto --plans-root <plans> list
 ```

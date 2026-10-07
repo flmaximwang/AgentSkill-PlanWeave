@@ -1,4 +1,4 @@
-"""`python -m loomery <子命令>` 的入口（等价于 `loomery <子命令>`）。"""
+"""`python -m loomerto <子命令>` 的入口（等价于 `loomerto <子命令>`）。"""
 from __future__ import annotations
 
 import sys

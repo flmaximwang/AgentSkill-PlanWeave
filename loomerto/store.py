@@ -3,7 +3,7 @@
 `commit()` 是唯一的写入漏斗（未来画布写回 R-02、状态校验 R-04/R-05 都挂在这里），
 所以「json 是唯一真相、三个视图永远派生」这条纪律只需要在一个地方守。
 
-plan 目录**不靠猜**：`plans_root()` 先看 `$LOOMERY_PLANS_ROOT`，再看 `$LOOMERY_PROFILE`，
+plan 目录**不靠猜**：`plans_root()` 先看 `$LOOMERTO_PLANS_ROOT`，再看 `$LOOMERTO_PROFILE`，
 最后落到 `~/.hermes/workspace/plans`。包可能装在 site-packages 里，离任何 profile 都远 ——
 profile 的位置由调用方显式交给它（skill 里的 shim 就是这么做的）。
 """
@@ -20,7 +20,7 @@ from . import render
 
 # 本包所在的目录（模板是包数据，跟着包走）
 _SELF = Path(__file__).resolve()
-TEMPLATE = Path(os.environ.get("LOOMERY_TEMPLATE") or (_SELF.parent / "assets" / "plan.html"))
+TEMPLATE = Path(os.environ.get("LOOMERTO_TEMPLATE") or (_SELF.parent / "assets" / "plan.html"))
 
 
 # 嵌入方（skill 薄壳 / 某个 harness）import 之后可以直接设它，给「这份 plan 库在哪」兜底；
@@ -29,12 +29,12 @@ EMBEDDED_PLANS_ROOT = ""
 
 
 def plans_root() -> Path:
-    """plan 目录：`$LOOMERY_PLANS_ROOT` → `$LOOMERY_PROFILE` → `EMBEDDED_PLANS_ROOT` → `~/.hermes/workspace/plans`。"""
-    env = (os.environ.get("LOOMERY_PLANS_ROOT") or "").strip()
+    """plan 目录：`$LOOMERTO_PLANS_ROOT` → `$LOOMERTO_PROFILE` → `EMBEDDED_PLANS_ROOT` → `~/.hermes/workspace/plans`。"""
+    env = (os.environ.get("LOOMERTO_PLANS_ROOT") or "").strip()
     if env:
         return Path(env).expanduser()
     base = Path.home() / ".hermes"
-    prof = (os.environ.get("LOOMERY_PROFILE") or "").strip()
+    prof = (os.environ.get("LOOMERTO_PROFILE") or "").strip()
     if prof:
         return base / "profiles" / prof / "workspace" / "plans"
     if EMBEDDED_PLANS_ROOT:
@@ -49,7 +49,7 @@ def plan_dir(slug: str) -> Path:
 def load(slug: str) -> dict:
     p = plan_dir(slug) / "plan.json"
     if not p.exists():
-        raise PlanError(f"找不到 plan '{slug}'（{p}）。用 `loomery new {slug} --title ...` 建一个。")
+        raise PlanError(f"找不到 plan '{slug}'（{p}）。用 `loomerto new {slug} --title ...` 建一个。")
     return json.loads(p.read_text(encoding="utf-8"))
 
 

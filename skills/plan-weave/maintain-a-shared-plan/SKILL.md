@@ -6,7 +6,7 @@ author: Hermes Agent
 license: MIT
 metadata:
   hermes:
-    tags: [plan, collaboration, multi-agent, loomery, visualization]
+    tags: [plan, collaboration, multi-agent, loomerto, visualization]
     category: plan-weave
     related_skills: [remind-collaborators, handle-a-recurring-progress-instruction, agent-to-agent-handoff]
 ---
@@ -38,15 +38,15 @@ metadata:
 $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
 ```
 
-**实现在仓库根的 loomery 包里**（纯 stdlib、零依赖）：model（模型与派生规则，纯函数）/ store（磁盘 +
+**实现在仓库根的 loomerto 包里**（纯 stdlib、零依赖）：model（模型与派生规则，纯函数）/ store（磁盘 +
 **唯一写入漏斗** `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print 与退出码）。
 这个 skill 只带一个**薄壳** `scripts/plan.py`：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」
-交给包，再按 `checkout → $LOOMERY_HOME → 已安装的 import → 已装好的 loomery 命令` 的顺序找包；
+交给包，再按 `checkout → $LOOMERTO_HOME → 已安装的 import → 已装好的 loomerto 命令` 的顺序找包；
 四条都不成立时会打印该装哪一条（退出码 2），**不会抛看不懂的 ImportError**。
-包没装的话先装：`uv tool install --editable <repo>`（本机已装好，`loomery` / `plan` 在 `~/.local/bin`）。
-**别的 harness 不必走命令行**：装过包就能 `from loomery import store` 直接读写同一份 plan.json。
-`loomery`（或 `python3 -m loomery`）与 `$P` 完全等价；跨 profile / 多份 plan 库时用
-`loomery --profile <名字>` 或 `--plans-root <路径>`。
+包没装的话先装：`uv tool install --editable <repo>`（本机已装好，`loomerto` / `plan` 在 `~/.local/bin`）。
+**别的 harness 不必走命令行**：装过包就能 `from loomerto import store` 直接读写同一份 plan.json。
+`loomerto`（或 `python3 -m loomerto`）与 `$P` 完全等价；跨 profile / 多份 plan 库时用
+`loomerto --profile <名字>` 或 `--plans-root <路径>`。
 
 ## 模型（借自 PlanWeave）
 
@@ -367,7 +367,7 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   的那一态会把固定定位元素画错位、并留一片未绘制的空白带（看着像布局塌了；旧版同样复现 ⇒ headless 伪影，
   不是产物缺陷）。这一态只信几何数字：`#detailpanel` 满足 `top==0 && bottom==innerHeight && right==innerWidth`、
   `#splitter.right ≈ panel.left`、`body` 的 `padding-right == panel.width`、且节点最右缘 ≤ `panel.left`。
-- 改模板（随包发布的 `plan.html`）后的自检（2026-10-07 实测）：`loomery render <slug>` 后拿 headless Chrome
+- 改模板（随包发布的 `plan.html`）后的自检（2026-10-07 实测）：`loomerto render <slug>` 后拿 headless Chrome
   `--dump-dom`（同样要 `perl -e 'alarm shift; exec @ARGV' 12` 兜住不退出）读 `#graph` 的 `clientWidth`
   与每个节点的 `style="left/top/width"`，判据是「各泳道行数 == ceil(块数 / 每行块数)」+「最右缘 ≈
   `#graph` 宽 − PAD」+「块数 == plan.json 里的块数」。想验「按容器宽度重排」不必真改窗口：
@@ -382,8 +382,8 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 
 | 文件 | 承担什么 |
 |---|---|
-| `scripts/plan.py` | skill 侧的**薄壳**：交代 plans 根 → 找包 → 调 `loomery.cli.main()`（找不到包时打印装法，退出码 2） |
-| loomery 包（仓库根） | 实现在那里：model（模型/派生）/ store（磁盘 + 唯一写入漏斗 `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print、唯一退出码）。**改实现去那里，改「怎么用」才改本文件** |
+| `scripts/plan.py` | skill 侧的**薄壳**：交代 plans 根 → 找包 → 调 `loomerto.cli.main()`（找不到包时打印装法，退出码 2） |
+| loomerto 包（仓库根） | 实现在那里：model（模型/派生）/ store（磁盘 + 唯一写入漏斗 `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print、唯一退出码）。**改实现去那里，改「怎么用」才改本文件** |
 | 兄弟 skill | `check-plan-node-commands`（每个块的命令与变量定义）、`check-plan-temp-hygiene`（临时文件闭环）、`remind-collaborators`（提醒纪律） |
 
 静态图（给聊天/群用，**只在被明确索取时才做**）落在 plan 目录的 `plan.png`；默认交付是 `file://`

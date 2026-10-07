@@ -4,15 +4,15 @@
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
-> `for c in new task block set exec rm expand collapse note digest render check current workers list; do loomery $c --help; done`
+> `for c in new task block set exec rm expand collapse note digest render check current workers list; do loomerto $c --help; done`
 
 ## 0. 怎么调用
 
-三种等价写法（实现都在仓库根的 `loomery` 包里，见 [`architecture.md`](architecture.md)）：
+三种等价写法（实现都在仓库根的 `loomerto` 包里，见 [`architecture.md`](architecture.md)）：
 
 ```bash
-loomery <子命令> [参数]                        # 装过包：uv tool install --editable <repo> → ~/.local/bin/loomery
-python3 -m loomery <子命令> [参数]              # 不装：在仓库根目录里跑
+loomerto <子命令> [参数]                        # 装过包：uv tool install --editable <repo> → ~/.local/bin/loomerto
+python3 -m loomerto <子命令> [参数]              # 不装：在仓库根目录里跑
 python3 <skill>/scripts/plan.py <子命令> [参数]  # skill 侧的薄壳：自己交代 plans 根、自己找包
 ```
 
@@ -24,8 +24,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - **全局旗标必须写在子命令之前**（写在后面会被当成未知参数）：
   `--no-render`（只改数据不刷视图）· `--plans-root <路径>`（直接指定 plan 目录）·
   `--profile <名字>`（用 `~/.hermes/profiles/<名字>/workspace/plans`）。
-  例：`loomery --profile plan-weave current my-plan`。
-  不显式给的话按 `$LOOMERY_PLANS_ROOT` → `$LOOMERY_PROFILE` → `~/.hermes/workspace/plans` 找。
+  例：`loomerto --profile plan-weave current my-plan`。
+  不显式给的话按 `$LOOMERTO_PLANS_ROOT` → `$LOOMERTO_PROFILE` → `~/.hermes/workspace/plans` 找。
 - `ref` 的写法：`T-002`（任务）/ `T-002#B-001`（块）/ `B-001`（块内唯一后缀）。
 - **退出码**：参数错、找不到对象 → **2**；`check` 发现图错误 → **1**；`workers` 发现 ⚠/❌ → **1**；其余 → **0**。
   出错原因走 stderr（中文），stdout 只放给人/给 agent 读的结果。
