@@ -276,8 +276,10 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   宽度、一条分隔线同时改两边的宽；② **常驻，不要「点开才跳出」**——点节点只换内容，页面布局一次都不许跳）：
   `--detail-w` 一个变量同时驱动 `#detailpanel` 的宽度和 `body{padding-right}`，所以画布 `#graph` 的
   `clientWidth` 跟着变、`graph()` 自动重排。**只有「宽度真的变了」才重排**（拖分隔线、窗口 resize、
-  隐藏已完成）；点节点 / 点卡片 / Esc **绝不重排** —— 没有关闭按钮，Esc 也不收起（`body{padding-right}`
-  常驻，所以载入时布局就已经是最终样子）。拖完把宽度写进 localStorage（`plan.detailw.<slug>`），
+  隐藏已完成）；点节点 / 点卡片 / 清空 **绝不重排**。清空 = 把 `#detail` 写回载入时那段提示
+  （`DETAIL_HINT` 直接从 DOM 里取，别在 JS 里另抄一份文案）+ 取消高亮，入口两个：详情栏标题行的
+  「清空」按钮与 Esc；**没有关闭边栏的入口**（`body{padding-right}` 常驻，载入时布局就已经是最终
+  样子 —— 用户要的就是这个）。拖完把宽度写进 localStorage（`plan.detailw.<slug>`），
   窗口 resize 时先夹进窗口再重排。
   **这段初始化代码必须排在第一个 `view('graph', graph)` 之前**：否则首帧按默认宽度排一遍、再按记住的
   宽度排第二遍，用户就会看见跳一下（本 skill 踩过）。**别退回「浮窗 + 拖标题栏」**：浮窗会盖住节点，
@@ -286,6 +288,8 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   `#detailpanel` 的 `top==0 && bottom==innerHeight && right==innerWidth`、`#splitter.right ≈ panel.left`、
   `body` 的 `padding-right == panel.width`、节点最右缘 ≤ `panel.left`；**点节点前后取「所有节点
   `style.cssText` + `#graph.clientWidth` 的签名，必须逐字符相同**（这条就是用户要的「布局不跳」）；
+  点节点后按 Esc / 点「清空」按钮：`#detail` 应回到载入时那段提示、`.sel` 清零、签名仍不变，
+  空态再按 Esc 无副作用；
   拖到 560 后等一帧 `gcw` 应变小且最右缘 ≤ `panel.left`；拖到低于 240 夹回 240；同一 profile 重新载入
   沿用记住的宽度。
 - 截图验详情栏之前**先把页面滚回顶部**：点节点会触发 `scrollIntoView`，而 headless Chrome 在「已经滚动过」

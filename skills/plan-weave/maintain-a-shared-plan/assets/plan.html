@@ -80,6 +80,10 @@
   #splitter:hover::after,#splitter.dragging::after,#splitter:focus-visible::after{
             left:3px;width:3px;background:var(--running)}
   #detailbar b{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+  #detailbar button{border:1px solid var(--line);background:var(--panel);color:var(--dim);
+                    border-radius:6px;padding:2px 9px;font-size:11.5px;line-height:1.6;cursor:pointer;
+                    font-family:inherit}
+  #detailbar button:hover{color:var(--ink);border-color:var(--dim)}
   #detail{padding:14px 16px;font-size:13px;overflow:auto;flex:1 1 auto;min-height:0}
   @media (max-width:900px){
     /* 窄屏别让详情栏吃掉画布：默认栏宽收窄（拖过分隔线的话以拖出来的宽度为准） */
@@ -123,7 +127,7 @@
       <h2>任务图（块 = 文档，边 = 依赖）</h2>
       <div class="toolbar">
         <label><input type="checkbox" id="hidedone"> 隐藏已完成</label>
-        <span>点节点或卡片看详情（详情常驻右侧，拖分隔线可调宽度）</span>
+        <span>点节点或卡片看详情（详情常驻右侧，拖分隔线可调宽度 · Esc 清空）</span>
       </div>
       <div id="graph"><svg id="edges"></svg></div>
       <div class="legend" id="legend"></div>
@@ -137,6 +141,7 @@
 <aside id="detailpanel">
   <div id="detailbar">
     <b>详情</b>
+    <button id="detailclear" title="清空详情内容（Esc）—— 只清内容，边栏常驻不动">清空</button>
   </div>
   <div id="detail"><p class="goal">点任务图里的节点，或「现在该谁动」里的卡片。</p></div>
 </aside>
@@ -350,9 +355,16 @@ function graph(){
 }
 
 let CUR = null;                        // 当前在详情里看的块
+// 初始提示就是「清空后」的样子：直接取 DOM 里那份，别在 JS 里再抄一遍文案
+// （innerHTML 这里不是外部输入：取的就是本文件 <div id="detail"> 里那段静态提示，写回去也是同一段）
+const DETAIL_HINT = document.getElementById('detail').innerHTML;
 function markSel(bid){
   document.querySelectorAll('.node,.nowcard').forEach(m =>
     m.classList.toggle('sel', m.dataset.id === bid));
+}
+function clearDetail(){                // 只清内容：详情栏常驻，所以布局一点都没动（不要再重排画布）
+  document.getElementById('detail').innerHTML = DETAIL_HINT;
+  CUR = null; markSel(null);
 }
 function detail(b, opts){
   if (!b) return;
@@ -446,6 +458,8 @@ try { const s = localStorage.getItem(DWKEY); if (s) setDetailW(parseFloat(s), fa
 
 view('header', header); view('nownext', nownext); view('legend', legend);
 view('graph', graph); view('journal', journal);
+document.getElementById('detailclear').onclick = clearDetail;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') clearDetail(); });
 document.getElementById('hidedone').onchange = () => view('graph', graph);
 // 窗口尺寸变了：先把详情栏宽度夹进新窗口，再按新宽度重排；拖动窗口会连发 resize，用 rAF 合帧
 window.addEventListener('resize', () => {
