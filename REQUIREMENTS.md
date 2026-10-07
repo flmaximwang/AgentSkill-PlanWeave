@@ -3,7 +3,7 @@
 **这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-08 · 代码基线 `__MERGE_SHA__`（= `block edit` 那轮重组 merged main 的 `move`；本机 default profile 里
+> 最后对齐：2026-10-08 · 代码基线 `3acfd7b`（= `block edit` 那轮重组 merged main 的 `move`；本机 default profile 里
 > 那五条 skill 的副本已同步到同一版；`plan-weave` profile 那份仍是旧一代，待随该 bot 退役一并清）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
