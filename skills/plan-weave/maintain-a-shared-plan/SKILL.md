@@ -251,6 +251,9 @@ py expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据
                                          # 一个块 → 一个任务（块成为第一步）
 py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
                                          # 一个任务 → 一个块（默认回展开前的位置）
+py move <slug> <块ref> --task T-00N [--index N] [--note "…"]
+                                         # 一个块 → 另一条任务（泳道）：换块 id + 重接 deps/review_of；
+                                         # 成环则拒改（一个字不写）；源任务空了不删。画布上的跨泳道拖走这条
 py note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
 py current <slug>                        # 现在该谁动
 py show <slug> <ref> [--json] [--runs N] # 一个块/一条任务的详情（只读；--runs 0 = 全列 run）
@@ -272,13 +275,18 @@ loomerto --plan <plan 数据文件> open      # 等价：loomerto open <plan 数
 
 - 起一个**只绑 `127.0.0.1`** 的本地服务（纯 stdlib `http.server`），默认自动挑空闲端口并打开浏览器；`Ctrl-C` 停。
 - 画布上能改：块的 **标题 / 做什么 / 判据 / 认领人 / 类型 / 状态**（认领 · 开干 · 送审 · 打回 · 收工）、
-  **新建任务**（顶栏与泳道下方各一个入口）、**新建块**、**拖动卡片改同一条泳道里的先后**。
+  **新建任务**（顶栏与泳道下方各一个入口）、**新建块**、**拖动卡片改同一条泳道里的先后**、
+  **拖到别的泳道 = 换任务**（拖到某张卡上＝插在它前面，拖到泳道空白处＝追加到末尾）。
+- **跨泳道拖 = `move`，不是「改个字段」**：块的 id 是 `T-00N#B-00N`（**位置即身份**），所以服务端
+  要换 id（目标任务里取最小空位）+ 把引用旧 id 的 `deps` / `review_of` / `expanded_from.block` 一次重接，
+  **成环就拒改**（400、一个字不写，界面把原因显示在顶栏）。源任务被搬空**不删任务**（空泳道留着）。
+  这套演算只有一份（`edits.move_block`），命令 `loomerto move <ref> --task T-00N [--index N]` 与画布共用。
 - **观感与只读看板同源**：两页共用 `loomerto/assets/theme.css`（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例）；
   右侧详情栏是常驻栏，**拖那条分隔线调宽度**（双击复位，宽度记在浏览器里；`Esc` / 「清空」只清内容）。
 - 每次改动走 `edits`（改动的唯一实现）→ `store.commit()`：数据文件与 `PLAN.md` / `plan.html` / `plan.canvas`
   **同时**更新；前端带 `rev`（= `updated_at`），对不上回 **409** —— 让人先「刷新」再改（**不做自动合并**）。
-- **不做**：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或依赖接线，
-  走 `rm` / `expand` / `collapse` / `block` 更安全。
+- **不做**：删块 / 删任务、直接改 `deps` / `review_of` —— 那些会一脚踩坏判据或接线，
+  走 `rm` / `move` / `expand` / `collapse` / `block` 更安全。
 - 要接第二个前端（别的 web 服务 / 别的画布）就读协议：`docs/canvas-sync.md`。
 
 ## 交付给人的默认包（默认就给，不用等他要）
@@ -412,6 +420,27 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 - 渲染看板时若所有块都 done，泳道会折叠成空图 —— 这是正常现象（去掉「隐藏已完成」即可）。
 - 改模板（随包的 `plan.html`）后不用开浏览器验证布局：用 node 打桩跑一遍内联脚本，能直接拿到每个节点的
   坐标并暴露渲染异常（本 skill 就是这么发现"隐藏已完成后节点被推到屏幕外"的）。
+- **改画布（`canvas.html` / `serve.py`）必须在真浏览器里真拖一次**，别只跑 CLI 与 curl（2026-10-07 跨泳道
+  拖动这轮）：CLI 全绿、服务端没有一行报错，而页面上 `drop` **静默什么都不做** —— 前端把「目标泳道 id」
+  当块 id 去查表，`moveTo` 直接 return 了。派发合成事件的写法：
+  `const dt=new DataTransfer(); src.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:dt})); dst.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));`
+  然后在页面里读回泳道→卡片 id 的顺序、`#msg` 文本、选中卡片；**再回读磁盘上的 `plan.json`**（页面对了
+  而文件没变 = 写回那条路断了）。
+- **`serve.py` 是已加载的模块，改它必须重启服务；`canvas.html` 不用**（`GET /` 每次都从磁盘重读资产）。
+  不重启就会拿旧代码验收 —— 会得到「改了却没生效」或「本该好的地方报 KeyError」这类假结果（两个都踩过）。
+- **`_apply` 的返回值是 `(msg, ref)` 二元组**（`ref` = 这次动到的块的当前 id，跨泳道换 id 时前端靠它保住
+  选中）：加/改一个 op 时**所有分支都要给全**，前端没传的可选键一律 `p.get(...)` —— 曾经 `reorder` 用了
+  `p["ref"]`，同泳道一拖就 `KeyError`（而跨泳道那条路是好的）。
+- **块的 id 就是位置**：跨泳道移动会换成目标任务里的**最小空位**，可能正好拿回刚腾出来的老号（`T-002#B-001`
+  换泳道后又变回 `T-002#B-001`，但已经是另一块了）。历史字段（`runs[].block` / `folded_from`）留着原样 ——
+  那是记录不是引用；要追溯就用 `log` 里那条 `move`（它同时写了旧 id 与新 id）。
+- **跑「另一份 checkout 的代码」要小心 `python3 -m` 的 cwd 优先**：`-m` 把**当前目录**放在 `sys.path` 最前，
+  所以在 main 的目录里写 `PYTHONPATH=<worktree> python3 -m loomerto` 跑的其实是 **main 那份** ——
+  「改动前 vs 改动后」的对拉会变成自己跟自己比（本 skill 踩过：11 份 plan 报「0 处差异」是假的）。
+  要跑另一份代码，先 `cd` 到那份 checkout 的根，或者在**没有 `loomerto/` 目录**的地方显式给 `PYTHONPATH`；
+  跑完先证明「跑的是哪一份」——看那份代码独有的东西（`--help` 里有没有新子命令、新子命令报不报错）。
+- **`--plans-root <库> digest <slug> <ref>` 是用法错**（`digest` 不收 ref），argparse 会把**整个子命令表**
+  打进 stderr —— 改了命令清单之后，这条 usage 文本会变，别把它误读成回归差异（本 skill 踩过）。
 
 ## Support files
 

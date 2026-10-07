@@ -1,10 +1,10 @@
 # `plan.py` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `7a4addd`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `7b71629`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
-> `for c in plan task block set exec rm expand collapse note digest render check current show workers list open; do loomerto $c --help; done`
+> `for c in plan task block set exec rm move expand collapse note digest render check current show workers list open; do loomerto $c --help; done`
 > （`plan` / `task` 是分组，它们的子命令另跑：`loomerto plan new --help`、`loomerto task new --help`）
 
 ## 0. 怎么调用
@@ -33,7 +33,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
   - 两个都给时**按 `--plan` 算**（打一行 ⚠）。**全局旗标必须写在子命令之前**（写后面会被当成未知参数）；
     `--no-render` = 只改数据不刷视图。
 - **文件模式的位置参数左移一位**：命令的第一个位置参数本来是 `slug`，给了 `--plan` 就不写它 ——
-  `set <slug> <ref> <status>` → `<ref> <status>`、`exec|show|rm|expand|collapse <slug> <ref>` → `<ref>`、
+  `set <slug> <ref> <status>` → `<ref> <status>`、`exec|show|rm|move|expand|collapse <slug> <ref>` → `<ref>`、
   `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
   `task` / `block`）文件模式下**不写位置参数**。多写一个（如 `show myplan T-003#B-004`）退 2，
   并点明「文件模式下不要再写 slug」。
@@ -68,6 +68,20 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 ### `rm` — 真删一个块或任务（取消 ≠ 删除）
 `py rm <slug> <ref> [--note "为什么删"] [--force]`
 - 被别的块当依赖/评审对象时**默认拒删**（`--force` 才删）；删任务会连带它所有的块。
+- 删**块**不会自动重接引用：`--force` 留下的 `deps` / `review_of` 会变成悬空（`check` 会报）。
+  只想把块换个地方就先用 `move`（它会把引用一起改对）。
+
+### `move` — 把一个块换到另一条任务（泳道）
+`py move <slug> <块ref> --task T-00N [--index N] [--note "为什么移"]`
+- 块的 id 是 `T-00N#B-00N`（**位置即身份**），所以换泳道 = **换 id**（在目标任务里取最小空位）+
+  把**引用旧 id 的接线全部重接**：别的块写进 `deps` / `review_of` 的，以及别的任务的 `expanded_from.block`。
+  历史字段（`folded_from` / `runs[].block`）是记录，不动。
+- `--index N` = 插到目标任务的第几位（0 起）；不给就追加到末尾。**同一条任务内**（`--task` 给的是它自己）
+  只改先后，此时 id 与接线都不动 —— 等价 `reorder`，画布上的同泳道拖动走的就是这条。
+- **成环则拒改，且一个字都不写**（与 `expand` / `collapse` 同一道闸）。最容易踩的一种：目标任务的
+  任务级 `deps` 在块搬进来后会落到它身上，而源任务里正好有块等它 —— 报错会点名是哪条任务级依赖。
+- 源任务被搬空**不删任务**（空泳道留着）；删任务走 `rm`。
+- 命令会打印换了什么：新 id、哪些块改等它、目标任务的任务级依赖从此算它的前置、源任务是否空了。
 
 ### `expand` — 一个块 → 一个任务流程（块原地成为第一步）
 `py expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2 :: kind"]… [--owner x] [--note "为什么"] [--dry-run]`
@@ -102,7 +116,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - 目前是**自由登记**：不校验 `--by` 是不是协作者、也不是必须给 pid（R-04 待做）。
 
 ### `note` — 写一条总结/决定进日志
-`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|expand|collapse] [--ref T-00N#B-00N] [--actor 谁]`
+`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|expand|collapse|move] [--ref T-00N#B-00N] [--actor 谁]`
 
 ## 4. 看
 
@@ -153,9 +167,10 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - **观感与只读看板同源**：两页都注入 `loomerto/assets/theme.css`（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例）；
   右侧详情栏与看板一样是常驻栏，**拖动那条分隔线调宽度**（双击复位，宽度记在浏览器里）。
 - 画布上能改：块的 标题 / 做什么 / 判据 / 认领人 / 类型 / **状态**（认领·开干·送审·打回·收工）、
-  新建任务、新建块、**拖动卡片改同一条泳道里的先后**。
-- **不做**（故意的）：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或接线，
-  走 `rm` / `expand` / `collapse` / `block` 更安全。理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
+  新建任务、新建块、**拖动卡片改同一条泳道里的先后**、**拖到别的泳道 = 换任务**（走 `edits.move_block`：
+  换块 id + 重接引用；会成环时拒改并把原因显示在顶栏）。
+- **不做**（故意的）：删块 / 删任务、直接改 `deps` / `review_of` —— 那些会一脚踩坏判据或接线，
+  走 `rm` / `move` / `expand` / `collapse` / `block` 更安全。理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
 - **写回**：每次改动都走 `edits`（改动的唯一实现）→ `store.commit()`，所以数据文件与三个视图**同时**更新；
   前端每次保存都带上自己读到的 `rev`（= `updated_at`），对不上回 **409** 并让人先刷新（不做自动合并）。
 - 失败不改任何东西：先改内存，出错抛 `PlanError` → 400（中文原因）；服务不会因为一次坏请求就死。
