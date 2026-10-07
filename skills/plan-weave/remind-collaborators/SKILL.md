@@ -30,12 +30,11 @@ plan: <绝对路径>/PLAN.md — 开工前先读它，状态只通过 plan.py �
   · `T-004#B-001` 配自己的 Discord bot（可开始）
 ```
 
-给 **人**（用户 / 群）的提醒多两行 —— 人看的是渲染出来的看板，不是 JSON：
+给 **人**（用户 / 群）的提醒换成 `file://` 看板 URL —— 人看的是浏览器里的看板，不是 JSON，也不下载附件：
 
 ```
 📋 <plan 标题> · 3/9 块（33%）· 更新 <时间>
 file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
-MEDIA:/Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 🔔 @<谁> 现在该动：
   · `T-004#B-001` 配自己的 Discord bot（可开始）
 ```
@@ -45,8 +44,10 @@ MEDIA:/Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 1. **块 id** —— 用 `T-004#B-001`，不要用「那个配 token 的事」。
 2. **plan 文件的绝对路径** —— 这是别的 agent 唯一的入口，也是你不在场时唯一还站着的东西。
 3. **一条命令就能做的下一步**（状态怎么改、产物放哪）。
-4. **给人时：`plan.html` 的 `file://` URL + 附件**（默认就带，别等他要）。截图不算这一条 ——
-   截图是拍下来的快照，plan 一改就过期，URL 指向的文件永远最新。
+4. **给人时：`file://` 看板 URL**（默认就带，别等他要），**并且不发附件、不起服务** ——
+   用户明确只要能在浏览器里直接看的 URL（原话「我觉得用 file 协议就行，不用起服务」）。
+   截图不算这一条（快照，一改就过期）。
+   整条提醒要压到**不被拆分** —— Discord 把超长回复拆成 `(1/2)` `(2/2)` 并加尾注，他明确不要这个尾注。
 
 ## 什么时候推、推给谁
 
@@ -80,7 +81,7 @@ hermes send -t discord:<channel>:<thread> "$(python3 $P digest <slug> --to defau
 
 - 把 digest 原文群发：每个人都收到别人的下一步 → 全是噪音。用 `--to`。
 - 只发聊天里的一句话，不带路径 → 三天后没人找得到。
-- **只发一张 `plan.png` 截图、不给 `plan.html` 的 URL** → 对方每次都得追着你要，而且他手上的图
-  已经是旧快照。给人时 URL + 附件是默认项。
+- **只发一张 `plan.png` 截图、或塞个 html 附件、不给能在浏览器直接看的 URL** → 对方每次都得追着你要。
+  默认项是 `file:///…/plans/<slug>/plan.html` 这一行，**不发附件、不起服务**。
 - 用「@所有人」代替「@该动的人」。
 - 在用户没要求时把定时提醒开起来（会一直烧 token）——**开之前先问**。
