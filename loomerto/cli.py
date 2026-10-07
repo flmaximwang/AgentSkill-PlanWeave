@@ -1,4 +1,4 @@
-"""CLI 层：argparse + 15 个子命令 + 人读输出 —— 唯一允许 print 与决定退出码的地方。
+"""CLI 层：argparse + 16 个子命令（+4 个别名）+ 人读输出 —— 唯一允许 print 与决定退出码的地方。
 
 别的 harness 想用这套能力，要么调这个模块的 `main()`，要么直接 import 模型 / 存储层。
 """
@@ -532,6 +532,87 @@ def cmd_current(a):
         print(f"[{e:<8}] {bid}  {title}  @{owner or '未指派'}"
               + exec_brief({"exec": ex}))
 
+def cmd_show(a):
+    """看一个块 / 一条任务的详细信息 —— 只读（改东西走 set / exec / block）。"""
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    d = plan_dir(a.slug)
+
+    if block is None:                       # 任务视角：块一览
+        rows = [{"id": x["id"], "title": x["title"], "kind": x.get("kind", ""),
+                 "status": block_effective(plan, x, task), "owner": x.get("owner") or ""}
+                for x in task.get("blocks") or []]
+        if a.json:
+            print(json.dumps({"kind": "task", "plan": plan["slug"], "id": task["id"],
+                              "title": task.get("title", ""), "status": task_status(plan, task),
+                              "owner": task.get("owner") or "", "deps": list(task.get("deps") or []),
+                              "blocks": rows}, ensure_ascii=False, indent=2))
+            return 0
+        print(f"plan: {plan['title']}  ({plan['slug']})")
+        st = task_status(plan, task)
+        print(f"{task['id']}  {task.get('title', '')}  [{STATUS_ZH.get(st, st)}]")
+        print(f"  认领  @{task.get('owner') or '未指派'}")
+        print(f"  前置  {'、'.join(task.get('deps') or []) or '—'}")
+        print(f"  块    {len(rows)} 个")
+        for r in rows:
+            print(f"    [{STATUS_ZH.get(r['status'], r['status'])}] {r['id']}  {r['title']}"
+                  f"  @{r['owner'] or '未指派'}")
+        print(f"  视图  {d}/PLAN.md · file://{d}/plan.html")
+        return 0
+
+    eff = block_effective(plan, block, task)
+    cby, cat = claim_of(block)
+    runs = block.get("runs") or []
+    shown = runs[-a.runs:] if a.runs > 0 else runs
+    rework = sum(1 for r in runs if r.get("from") == "review" and r.get("to") != "done")
+    ex = block.get("exec") or {}
+    obj = {"kind": "block", "plan": plan["slug"], "id": block["id"], "title": block["title"],
+           "status": eff, "status_since": block.get("status_since", ""), "type": block.get("kind", ""),
+           "task": {"id": task["id"], "title": task.get("title", "")},
+           "owner": block.get("owner") or "", "claimed_by": cby, "claimed_at": cat,
+           "doc": block.get("doc", ""), "done_when": list(block.get("done_when") or []),
+           "deps": block_deps(plan, task, block), "own_deps": list(block.get("deps") or []),
+           "review_of": block.get("review_of", ""), "feedback": block.get("feedback", ""),
+           "rework": rework, "artifacts": list(block.get("artifacts") or []), "exec": ex,
+           "runs": shown, "views": {"md": f"{d}/PLAN.md", "html": f"{d}/plan.html",
+                                    "canvas": f"{d}/plan.canvas"}}
+    if a.json:
+        print(json.dumps(obj, ensure_ascii=False, indent=2))
+        return 0
+
+    since = (block.get("status_since") or "")[:16].replace("T", " ")
+    print(f"plan: {plan['title']}  ({plan['slug']})")
+    print(f"{block['id']}  {block['title']}")
+    print(f"  状态  {STATUS_ZH.get(eff, eff)}（{eff}）" + (f" · 自 {since}" if since else ""))
+    print(f"  类型  {block.get('kind', '')}")
+    print(f"  归属  {task['id']} {task.get('title', '')}")
+    print(f"  认领  @{cby or block.get('owner') or '未指派'}"
+          + (f"（{cat[:16].replace('T', ' ')}）" if cat else ""))
+    eb = exec_brief(block)
+    print(f"  在做  {eb[3:] if eb else '未登记'}")
+    if ex.get("transcript"):
+        print(f"        转录 {ex['transcript']}")
+    print(f"  做什么 {block.get('doc') or '——'}")
+    dw = block.get("done_when") or []
+    for i, c in enumerate(dw):
+        print(f"  {'判据' if i == 0 else '    '}  {c}")
+    if not dw:
+        print("  判据  ——（缺，check 会告警）")
+    print(f"  依赖  {'、'.join(obj['deps']) or '—'}")
+    if block.get("review_of"):
+        print(f"  评审  {block['review_of']}")
+    if rework or block.get("feedback"):
+        print(f"  返工  ⟲{rework}" + (f" · {block['feedback']}" if block.get("feedback") else ""))
+    arts = block.get("artifacts") or []
+    for i, p in enumerate(arts):
+        print(f"  {'产物' if i == 0 else '    '}  {p}")
+    print(f"  run   {len(runs)} 条" + (f"（列最近 {len(shown)}）" if len(shown) < len(runs) else ""))
+    for r in shown:
+        print(f"    · {(r.get('at') or '')[:16].replace('T', ' ')} {r.get('by', '')}"
+              f" {r.get('from', '')}→{r.get('to', '')}  {r.get('note', '')}".rstrip())
+    print(f"  视图  {d}/PLAN.md · file://{d}/plan.html")
+    return 0
+
 def cmd_check(a):
     plan = load(a.slug)
     errs, warns = [], []
@@ -824,6 +905,14 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("current", help="现在可动的块")
     p.add_argument("slug")
     p.set_defaults(f=cmd_current)
+
+    p = sub.add_parser("show", aliases=["info"],
+                       help="看一个块/一条任务的详细信息（只读：状态·认领·在做·线程·做什么·判据·依赖·run）")
+    p.add_argument("slug")
+    p.add_argument("ref", help="块或任务：T-002#B-001 / B-001 / T-002")
+    p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
+    p.add_argument("--runs", type=int, default=5, help="列最近几条 run（0 = 全列，默认 5）")
+    p.set_defaults(f=cmd_show)
 
     p = sub.add_parser("workers", aliases=["threads"],
                        help="检查每个在途块登记的子代理线程是否还在动（已结束/记错 ⇒ exit 1）")
