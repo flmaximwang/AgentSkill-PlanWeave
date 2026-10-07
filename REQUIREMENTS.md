@@ -19,7 +19,7 @@
 | [`skills/plan-weave/check-plan-node-commands/SKILL.md`](skills/plan-weave/check-plan-node-commands/SKILL.md) | 交付前校验之二：每个节点的可执行命令与变量定义 | 送审 / 交接 / 收尾 |
 | [`skills/agent-orchestration/intake-a-running-collaboration/SKILL.md`](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | 后进来的人怎么用秒级只读证据接上（含 `references/read-only-evidence-recipes.md`） | 被 @ 进一段已经在跑的协作 |
 | [`blind-tests/r1/`](blind-tests/r1/README.md) | description 路由盲测：题面 / 金标 / 判官 A·B / 得分矩阵 | 改了 skill 头部之后 |
-| `docs/architecture.md` | **待写**（R-08 落地时产出）：拆分后的模块边界、跨 harness 的调用约定 | 要动结构 / 要接别的 harness |
+| [`docs/architecture.md`](docs/architecture.md) | 拆分后的模块边界、跨 harness 的三条约定、怎么接新前端（画布写回 / web 服务）、改代码前的三道闸 | 要动结构 / 要接别的 harness |
 | `docs/canvas-sync.md` | **待写**（R-02 落地时产出）：画布写回 json 的协议、冲突与幂等规则 | 要改画布 / 做 web 界面 |
 
 ## 1. 定位（一句话）
@@ -47,8 +47,9 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-05** | 每个项目要先登记**协作者**（人类 / agent），节点必须派给协作者中的一员 | `new --owner "id=kind:label[@channel]"` 写 `participants`，`block --owner` 只是个自由字符串；**不校验** owner 是否在 participants 里，也不强制「先有协作者」 | 部分 |
 | **R-06** | 给用户的界面**不一定是 html 文件**：也可以是一个 Python 起的本地 web 服务，能在**多个 plan 之间切换** | `plan.py` 是纯 CLI；`plan.html` 是自包含单文件（能 `file://` 打开）。没有任何服务层，也没有「多 plan 一览/切换」的界面（`list` 只有一行文本） | 待做 |
 | **R-07** | **需求要在 skill repo 里留档**，方便后期对齐；文档要有**单一入口**，入口要**完整指路**到细节文档 | 本文件 + [`docs/cli-reference.md`](docs/cli-reference.md) 就是这次的产物；README 加了「文档地图」指向这里 | 已落地（本次提交） |
-| **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 目前是**单文件** `scripts/plan.py`（1471 行，纯 stdlib）：核心模型、存储、渲染、CLI 全混在一起，别的程序只能靠 shell 调 | 待做（拆分） |
+| **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 5 层：`plan.py`（薄壳）+ `planweave/{model,store,render,workers,cli}.py`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处；别的程序 `from planweave import store` 即可用 | 已落地 |
 | **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：15 个子命令（+3 别名）逐条列参数与退出码 | 已落地（本次提交） |
+| **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block` 的 `--status` 默认已改成 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
@@ -62,18 +63,22 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 
 退出码约定：参数错 / 找不到对象 → **2**；`check` 有错误 → **1**；`workers` 有 ⚠/❌ → **1**；其余 → 0。
 
-## 4. 缺口与依赖（为什么下一步先拆）
+## 4. 缺口（拆完之后的落点）
 
-| 缺口 | 依赖 | 为什么不能直接加到单文件里 |
-|---|---|---|
-| R-02 画布写回 | 渲染层与存储层要能**分别**被调用（写回只改 json，再自动同步另外两个视图） | 现在 `render_*` 与命令、print 混在一个文件里，写回逻辑没有可站的地方 |
-| R-04 状态约束、R-05 协作者校验 | 要有一处**统一的写入闸**（所有改状态都得过） | 现在每个 `cmd_*` 自己算、自己 print、自己 `die()` —— 校验会散成一堆补丁 |
-| R-06 web 服务 / 多 plan 切换 | 核心要能**被 import**、且不 print、不 `sys.exit` | 现在 `die()` 直接退进程、命令直接 print，任何人都没法当库用 |
-| R-03 定点插入 | 依赖图重排要能单独调用与单测 | 同上 |
+**拆分（R-08）已落地** ⇒ 下面每个缺口现在都有明确落点，不必再散着补：
 
-→ 所以 **R-08（拆分）排在这些前面**：拆成「模型 / 存储 / 视图 / 线程探活 / CLI 适配层」，
-核心层不 print、不 exit、只返回数据或抛 `PlanError`；**入口路径不变**（仍是 `scripts/plan.py`），
-所以现有文档、`$P` 变量、remind/check 三个兄弟 skill 的调用方式一个字都不用改。
+| 缺口 | 落在哪 |
+|---|---|
+| R-02 画布写回 | 前端把改动写成对 `plan.json` 的最小 patch → `store.commit()`（落 json + 同步三视图一步做完）；协议细节进 `docs/canvas-sync.md` |
+| R-04 状态约束 / R-05 协作者校验 | 唯一的写入闸已是 `store.commit()`：加一个 `validate(plan, who, what)` 挂进去一处即可，不必动 15 个命令 |
+| R-06 web 服务 / 多 plan 切换 | 服务层只 import `store` + `model`（`PLANS_ROOT` 下每个 slug 一份 plan）；**不许在服务里另存状态** |
+| R-03 定点插入 | 结构演算在 `model.py`（`refs_to` / `block_deps` / `guard_acyclic` 同层加纯函数），CLI 只做参数解析与打印 |
+
+**R-10 的一个边界（在此写定，免得日后反复问）**：默认 `blocked` 只管**显式建块**（`block` 命令）；
+`expand --step` 追加的步骤留在 `pending` —— 它是「已经批过的那条活」的后续步骤，不是新提议。
+
+入口路径没变（仍是 `scripts/plan.py`），所以现有文档、`$P` 变量、remind/check 三个兄弟 skill 的
+调用方式一个字都没改；模块边界与「怎么接新前端」见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 5. 决策点（待用户拍板）
 

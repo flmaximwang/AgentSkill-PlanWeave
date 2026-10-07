@@ -34,7 +34,9 @@ py <子命令> [参数]
 - `--deps` 是**任务级**依赖；开工条件 = 那些任务的**全部**块都 done。
 
 ### `block` — 给任务加一个块（可独立认领、可评审的工作）
-`py block <slug> --task T-001 --title "…" [--kind impl|review|decision|research] [--doc "做什么"] [--done-when "判据"]… [--deps T-00N#B-00N …] [--owner x] [--review-of T-00N#B-00N] [--status pending|…]`
+`py block <slug> --task T-001 --title "…" [--kind impl|review|decision|research] [--doc "做什么"] [--done-when "判据"]… [--deps T-00N#B-00N …] [--owner x] [--review-of T-00N#B-00N] [--status 状态]`
+- **`--status` 默认 `blocked`（=待批准，等有人点头）**：只有 AI 判断这块无需审批就能干，才显式给
+  `--status pending`。`expand --step` 追加的步骤不在此列 —— 它们是「已经批过的那条活」的后续，仍是 `pending`。
 - `doc`（做什么）与 `done_when`（**可核验**的判据）是块的本体；没有判据的块不许建。
 - 块的 `deps` **只能在建块时一次给全**：事后要改依赖只有 `expand` / `collapse` / `rm` 重建三条路。
 

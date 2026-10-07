@@ -38,7 +38,11 @@ metadata:
 $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
 ```
 
-纯 stdlib，单文件，可直接 `python3 "$P" ...`。
+纯 stdlib，可直接 `python3 "$P" ...`。入口是**薄壳**（`scripts/plan.py`），实现在同目录的
+`scripts/planweave/` 包里：`model`（模型/派生，纯函数）/ `store`（磁盘 + 唯一写入漏斗 `commit()`）/
+`render`（三视图）/ `workers`（线程探活）/ `cli`（唯一 print 与退出码）。
+**别的 harness 不必走命令行**：`from planweave import store` 就能读写同一份 plan.json（跨 harness 约定见
+`scripts/planweave/__init__.py`）。
 
 ## 模型（借自 PlanWeave）
 
@@ -80,6 +84,8 @@ $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scri
 **「待批准」只有一个状态**（内部 `blocked`）：无论是"开工前计划好的关卡"还是"开工后卡住"，都是同一
 件事 —— 这块离了某个人/某个外部条件就动不了，表现和处置完全一样。区别写在 `--note` 里，不要再拆出
 第二个状态（曾经试过 `needs_approval`，两个状态行为相同、只是逼记录员多选一次，已合并）。
+**新建块默认就是「待批准」**（`block` 的 `--status` 默认 `blocked`）—— 由 AI 判断这块无需审批就能干时，
+才显式写 `--status pending` 放行；`expand --step` 追加的步骤不在默认之列（它是已批准那条活的后续步骤）。
 `pending`（待排）不进图例 —— 图上有依赖时它会显示成「待认领 / 等前置」。
 
 **评审不是回边，返工才是那个 loop —— 但它长在块的「状态」上。** 评审是下游的**独立块**（`kind=review`
@@ -216,7 +222,7 @@ py new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>"
 py task <slug> --title "…" [--deps T-001] [--owner x]
 py block <slug> --task T-001 --title "…" --kind impl|review|decision|research \
    --doc "做什么" --done-when "可核验的判据" [--deps T-001#B-002] [--review-of T-001#B-002] \
-   [--owner x] [--status blocked]
+   [--owner x] [--status 状态]      # --status 默认 blocked（待批准）；无需审批才显式给 pending
 py set <slug> <ref> <status> [--by x] [--note "…"] [--artifact <路径>] [--at ISO]
       [--doc "…"] [--done-when "…"]      # 事实变了就改块原文，别只写在日志里
 py exec <slug> <块/任务ref> --by <谁> [--delegation deleg_xxxxxxxx] [--task-index N] \
@@ -372,7 +378,12 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 
 | 文件 | 承担什么 |
 |---|---|
-| `scripts/plan.py` | 全部命令：模型 / 状态机 / digest / 三视图渲染 |
+| `scripts/plan.py` | CLI 入口（薄壳）：插 `sys.path` + 调 `planweave.cli.main()` |
+| `scripts/planweave/model.py` | 数据模型 / 状态机 / 派生状态 / 依赖与图 / 粒度规则（纯函数，出错抛 `PlanError`） |
+| `scripts/planweave/store.py` | 磁盘读写 + **唯一写入漏斗** `commit()`（改 json 后同步三个视图） |
+| `scripts/planweave/render.py` | 三视图生成（PLAN.md / plan.canvas / plan.html），只返回字符串 |
+| `scripts/planweave/workers.py` | 子代理线程探活（七种结论） |
+| `scripts/planweave/cli.py` | argparse + 15 个子命令（**唯一 print、唯一退出码**） |
 | `assets/plan.html` | 可视化模板（`/*__PLAN_DATA__*/null` 处注入 plan.json） |
 | 兄弟 skill | `check-plan-node-commands`（每个块的命令与变量定义）、`check-plan-temp-hygiene`（临时文件闭环）、`remind-collaborators`（提醒纪律） |
 
