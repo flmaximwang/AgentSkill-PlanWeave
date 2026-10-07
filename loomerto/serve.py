@@ -123,15 +123,20 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(409, {"ok": False,
                                  "error": "这份 plan 在别处被改过了 —— 先点「刷新」再改"})
                 return
-            msg = self._apply(plan, payload)          # 只改 dict
+            msg, ref = self._apply(plan, payload)     # 只改 dict
             store.commit(self.slug, plan)             # 唯一的写入漏斗：json + 三个视图
-            self._send(200, {"ok": True, "msg": msg, "view": view_model(store.load(self.slug))})
+            self._send(200, {"ok": True, "msg": msg, "ref": ref,
+                             "view": view_model(store.load(self.slug))})
         except PlanError as e:
             self._send(400, {"ok": False, "error": str(e)})
         except Exception as e:                        # 一次坏请求不许把服务弄死
             self._send(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    def _apply(self, plan, p) -> str:
+    def _apply(self, plan, p) -> tuple:
+        """执行一次改动，返回 `(msg, ref)`：`ref` 是这次动到的块的**当前** id（没动块就是空串）。
+
+        跨泳道移动会换块 id，前端要靠它把选中态跟到新 id 上。
+        """
         op = (p.get("op") or "").strip()
         who = (p.get("by") or "").strip() or "canvas"
         note = p.get("note") or ""
@@ -139,27 +144,32 @@ class _Handler(BaseHTTPRequestHandler):
             _b, changed = edits.edit_block(plan, p["ref"], title=p.get("title"), doc=p.get("doc"),
                                            done_when=p.get("done_when"), owner=p.get("owner"),
                                            kind=p.get("kind"), note=note, actor=who)
-            return f"{p['ref']} 改了 {'、'.join(changed)}" if changed else f"{p['ref']} 没有变化"
+            return (f"{p['ref']} 改了 {'、'.join(changed)}" if changed else f"{p['ref']} 没有变化",
+                    p["ref"])
         if op == "status":
             t, old = edits.set_status(plan, p["ref"], p["status"], by=who, note=note,
                                       owner=p.get("owner") or "",
                                       done_when=(p.get("done_when") if p.get("done_when") is not None else None),
                                       actor=who)
-            return f"{t['id']} {old} → {p['status']}"
+            return f"{t['id']} {old} → {p['status']}", t["id"]
         if op == "task":
             t = edits.add_task(plan, (p.get("title") or "").strip(), owner=p.get("owner") or "",
                                deps=p.get("deps") or [], note=note, actor=who)
-            return f"新增任务 {t['id']}「{t['title']}」"
+            return f"新增任务 {t['id']}「{t['title']}」", ""
         if op == "block":
             _t, b = edits.add_block(plan, p["task"], title=(p.get("title") or "").strip(),
                                     kind=p.get("kind") or "impl", doc=p.get("doc") or "",
                                     done_when=p.get("done_when") or [], deps=p.get("deps") or [],
                                     owner=p.get("owner") or "",
                                     status=p.get("status") or "pending", actor=who)
-            return f"新增块 {b['id']}「{b['title']}」"
+            return f"新增块 {b['id']}「{b['title']}」", b["id"]
         if op == "reorder":
             _ = edits.reorder_blocks(plan, p["task"], p.get("order") or [])
-            return f"{p['task']} 的块顺序已保存"
+            return f"{p['task']} 的块顺序已保存", p.get("ref") or ""
+        if op == "move":
+            b, _notes = edits.move_block(plan, p["ref"], p["task"], index=p.get("index"),
+                                         note=note, actor=who)
+            return (f"{p['ref']} → {b['id']}（换了泳道，id 与依赖接线已跟着改）", b["id"])
         raise PlanError(f"不认识的 op：{op!r}")
 
 

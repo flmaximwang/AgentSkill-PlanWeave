@@ -1,4 +1,4 @@
-"""CLI 层：argparse + 17 个子命令（`plan new` / `task new` 是分组，另 4 个别名）+ 人读输出 ——
+"""CLI 层：argparse + 18 个子命令（`plan new` / `task new` 是分组，另 4 个别名）+ 人读输出 ——
 唯一允许 print 与决定退出码的地方。
 
 别的 harness 想用这套能力，要么调这个模块的 `main()`，要么直接 import 模型 / 存储层。
@@ -170,6 +170,20 @@ def cmd_rm(a):
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=task["id"])
     commit(a.slug, plan, a)
     print(f"✓ 已删除任务 {task['id']}（含 {n} 个块）")
+
+def cmd_move(a):
+    """把一个块移到**另一条任务**（泳道）—— 画布上的跨泳道拖动走同一条 `edits.move_block`。
+
+    换泳道 = 换块 id + 把引用旧 id 的 `deps` / `review_of` 全部重接；成环则拒改（什么都不写）。
+    """
+    plan = load(a.slug)
+    block, notes = edits.move_block(plan, a.ref, a.task, index=a.index,
+                                    note=a.note, actor=a.actor)
+    commit(a.slug, plan, a)
+    print(f"✓ {a.ref} → {block['id']}")
+    for n in notes:
+        print(f"    {n}")
+
 
 def cmd_expand(a):
     """把一个块（B）展开成一个任务（T）：原块成为第一步，--step 依次追加后续步骤。
@@ -816,6 +830,16 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_rm, shift=["ref"])
 
+    p = sub.add_parser("move", help="把一个块移到另一条任务（泳道）：换块 id + 重接依赖接线（成环则拒改）")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="要移的块：T-001#B-002 或 B-002")
+    p.add_argument("--task", required=True, help="落到哪条任务（泳道）：T-003")
+    p.add_argument("--index", type=int, default=None,
+                   help="插到该任务的第几位（0 起；默认追加到末尾）")
+    p.add_argument("--note", default="", help="为什么移（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_move, shift=["ref"])
+
     p = sub.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="要展开的块：T-001#B-002 或 B-002")
@@ -853,7 +877,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("text", nargs="?", default=None)
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
-                            "block", "status", "expand", "collapse"])
+                            "block", "status", "expand", "collapse", "move"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_note, shift=["text"])

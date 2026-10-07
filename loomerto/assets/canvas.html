@@ -115,12 +115,14 @@ const blockOf = (id) => { for (const t of (VIEW?.tasks||[])) for (const b of t.b
 
 function msg(text, cls){ const m = $("#msg"); m.textContent = text || ""; m.className = cls || ""; }
 
-async function api(op, payload){
+async function api(op, payload, after){
   const body = Object.assign({op, rev: VIEW?.rev || ""}, payload || {});
   const r = await fetch("/api/plan", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
   const j = await r.json().catch(() => ({ok:false, error:"服务回了非 JSON"}));
   if (!r.ok || !j.ok){ msg("✗ " + (j.error || r.status), "err"); return false; }
-  VIEW = j.view; msg("✓ " + (j.msg || "已保存"), "ok"); render();
+  VIEW = j.view; msg("✓ " + (j.msg || "已保存"), "ok");
+  if (after) after(j);          // 跨泳道移动会换块 id：先把选中态跟到新 id 上，再画
+  render();
   return true;
 }
 
@@ -145,7 +147,7 @@ function render(){
       s === "cancelled"
         ? `<span><i class="zebra"></i>${esc(zh(s))}</span>`
         : `<span><i style="background:var(--${s})"></i>${esc(zh(s))}</span>`).join("")
-    + `<span style="opacity:.85">拖动卡片 = 改这条泳道里的先后；跨泳道移动暂不支持</span>`;
+    + `<span style="opacity:.85">拖动卡片 = 改先后；拖到别的泳道 = 换任务（块 id 与依赖接线自动跟着改）</span>`;
   const lanes = $("#lanes");
   lanes.innerHTML = "";
   for (const t of v.tasks){
@@ -213,7 +215,15 @@ function drawEdges(){
 window.addEventListener("resize", () => drawEdges());
 document.addEventListener("scroll", () => drawEdges(), true);
 
-// ---------------------------------------------------------------- 拖 = 改先后（同泳道内）
+// ---------------------------------------------------------------- 拖 = 改先后（同泳道）+ 换任务（跨泳道）
+// 跨泳道 drop 走 `move` op：块的 id 与引用它的 deps / review_of 由服务端的 edits.move_block 一次改对；
+// 成环时服务端拒改（400），前端只把原因显示出来。
+function moveTo(from, to, at){
+  // `from` 是块 id、`to` 是任务（泳道）id —— 两者都用各自的表查，别混
+  if (!blockOf(from)[0] || !(VIEW.tasks || []).some(t => t.id === to)) return;
+  api("move", {ref: from, task: to, index: at}, (j) => { SEL = j.ref || null; });
+}
+
 function wireDnD(){
   document.querySelectorAll(".card").forEach(card => {
     card.addEventListener("dragstart", e => {
@@ -226,26 +236,30 @@ function wireDnD(){
     card.addEventListener("drop", e => {
       e.preventDefault(); e.stopPropagation();
       if (!DRAG || DRAG.id === card.dataset.id) return;
-      const [t1,b1] = blockOf(DRAG.id), [t2] = blockOf(card.dataset.id);
+      const drag = DRAG.id, onto = card.dataset.id;
+      const [t1] = blockOf(drag), [t2] = blockOf(onto);
       if (!t1 || !t2) return;
-      if (t1.id !== t2.id){
-        msg("跨泳道移动会改块 id 与依赖接线，画布暂不支持（用 expand / collapse / block 命令）", "err");
+      if (t1.id !== t2.id){                      // 跨泳道：插在这张卡前面
+        const at = t2.blocks.findIndex(b => b.id === onto);
+        moveTo(drag, t2.id, at < 0 ? null : at);
         return;
       }
-      const ids = t1.blocks.map(b => b.id).filter(x => x !== DRAG.id);
-      ids.splice(ids.indexOf(card.dataset.id), 0, DRAG.id);
-      api("reorder", {task: t1.id, order: ids});
+      const ids = t1.blocks.map(b => b.id).filter(x => x !== drag);
+      ids.splice(ids.indexOf(onto), 0, drag);
+      api("reorder", {task: t1.id, order: ids, ref: drag}, () => { SEL = drag; });
     });
   });
   document.querySelectorAll(".lane").forEach(lane => {
     const cards = lane.querySelector(".cards");
     cards.addEventListener("dragover", e => { e.preventDefault(); cards.classList.add("over"); });
     cards.addEventListener("dragleave", () => cards.classList.remove("over"));
-    cards.addEventListener("drop", e => {
+    cards.addEventListener("drop", e => {          // 落在泳道空白处 = 追加到这条泳道末尾
       cards.classList.remove("over");
-      const [tFrom] = DRAG ? blockOf(DRAG.id) : [null];
-      if (tFrom && tFrom.id !== lane.dataset.task)
-        msg("跨泳道移动会改块 id 与依赖接线，画布暂不支持", "err");
+      if (!DRAG) return;
+      const drag = DRAG.id;
+      const [tFrom] = blockOf(drag);
+      if (!tFrom || tFrom.id === lane.dataset.task) return;   // 同泳道落空白处：不动（拖到卡片之间才是排序）
+      moveTo(drag, lane.dataset.task, null);
     });
   });
 }
@@ -266,11 +280,13 @@ function editor(){
   if (NEWFORM){ box.innerHTML = NEWFORM.html; wireNewForm(); return; }
   const [t,b] = SEL ? blockOf(SEL) : [null,null];
   if (!b){
-    box.innerHTML = `<h2>画布</h2><p class="goal">点一个块来编辑；拖卡片改同泳道内的先后。</p>
+    box.innerHTML = `<h2>画布</h2><p class="goal">点一个块来编辑；拖卡片改先后，拖到别的泳道 = 换任务。</p>
       <div class="kv">数据文件：<code>${esc(VIEW.file)}</code><br>
       每次保存都会写回这份 json，并同步 PLAN.md / plan.html / plan.canvas。</div>
-      <div class="kv">能改：标题 · 做什么 · 判据 · 认领人 · 类型 · 状态（含送审 / 打回 / 收工）· 新建任务与块。<br>
-      暂不提供：删块、跨泳道移动、改依赖接线 —— 这些会一脚踩坏判据或改块 id，走命令更安全。</div>`;
+      <div class="kv">能改：标题 · 做什么 · 判据 · 认领人 · 类型 · 状态（含送审 / 打回 / 收工）· 新建任务与块 · 拖块换先后 / 换任务。<br>
+      跨泳道拖 = 块换 id（<code>T-00N#B-00N</code> 里第一段跟着换）+ 引用它的 <code>deps</code>/<code>review_of</code>
+      自动重接；会让依赖成环时拒改并把原因说出来。<br>
+      暂不提供：删块、删任务、直接改依赖接线 —— 走命令（<code>rm</code> / <code>move</code> / <code>expand</code> / <code>collapse</code>）更安全。</div>`;
     return;
   }
   const parts = VIEW.participants.map(p => `<option value="${esc(p.id)}">`).join("");
