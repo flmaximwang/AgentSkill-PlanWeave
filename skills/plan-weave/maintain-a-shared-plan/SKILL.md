@@ -91,6 +91,54 @@ $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scri
 "谁在等谁"（深度/拓扑）也没法算。返工不会波及下游 —— 打回发生在做块 `done` 之前，下游一直卡在
 「等前置」，这也正是把评审卡在 done 之前的意义。
 
+## 粒度调整：块（B）⇄ 任务（T）
+
+计划开工后粒度会变：一个块干着干着发现是**三件事**（该升成一条工作线），或者一个任务拆得太碎、
+几步其实一个人一次做完（该压回一块）。两个命令把结构一次改对，**不要手删重建** —— 重建会丢
+runs / feedback / 判据，还得手工接依赖，而块的 `deps` 只能在建块时给。
+
+```bash
+py expand <slug> <块ref> [--title "…"] [--owner x] [--note "为什么"]
+      [--step "标题 :: 做什么 :: 判据1;判据2 :: kind"]...   # 可多次，按顺序追加
+py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
+      [--title …] [--doc …] [--done-when …] [--kind impl|review|decision|research]
+      [--force] [--dry-run]
+```
+
+**`expand`：一个块 → 一个任务。** 原块**原地升级**成新任务的第一步（标题/doc/判据/runs 逐字保留，
+只换 id），`--step` 给的步骤按顺序串在后面（第 N 步依赖第 N−1 步）。新任务插在原任务之后
+（泳道顺序 = 流程顺序）。
+
+- **前后关系一次改对**：凡是等这个块的（显式 `deps`、`review_of`、以及靠任务级依赖落下来的）
+  一律改等**新任务的链尾**；这个块自己的前置原样成为第一步的前置。`review_of` 本身就含依赖边，
+  所以那条不会再重复欠一条 `deps`。
+- **原任务空掉就清掉**：这个块是任务里最后一块时，任务被删掉，别的任务对它的**任务级依赖转给新任务**
+  —— 语义等价（原来等「那个任务的所有块」，现在等新链的全部块），不转就是一条悬空引用。
+- `expanded_from` 记下「从哪个任务的第几块展开来的」，`collapse` 靠它回原位。
+
+**`collapse`：一个任务 → 一个块。** 块必须住在某个任务里，所以「压」要交代落点，按这个顺序定：
+
+1. `--keep-task`：留在本任务，只剩这一块（任务还在；插在第一块原来的位置）；
+2. `--into <块ref>`：插到那个块之后（在那块所在的任务里）；`--into <任务ref>`：追加到那个任务末尾；
+3. 都不给：有 `expanded_from` → **回展开前的位置**；否则若这条链只从**一个**别的任务起步 →
+   落到那个任务末尾；
+4. 还说不清就**报错并列出候选**（不猜）—— 猜错了就是把活安到错的泳道里。
+
+- **合并块的字段**：标题 = 任务标题（`--title` 可改）；`doc` = 单块时逐字沿用、多块时拼成
+  「1. 标题：doc」；`done_when` = 各步判据的**并集**（逐字，不重写）；`artifacts` 取并集；
+  各步的 `runs` 按时间搬进来并标 `block=<原块 id>`；`folded_from` 记下被折进来的每一块
+  （id/标题/kind/状态/doc/判据）。落在**本任务**里时不再把任务级依赖落成显式 `deps`（任务级依赖照样生效）。
+- **状态**：各块状态一致就取那个；不一致时**默认拒绝**（`--force` 才压），且取**最靠前**的那个
+  （`pending < blocked < claimed < running < review < done`）—— 还没做完就不许记成做完。
+- **接线**：各步对外部的前置合并成新块的 `deps`（任务内部的前置消掉）；等这些块的（含 `review_of`）
+  改等新块；被删任务的任务级依赖摘掉、改由下游块显式等新块。
+- **回原位可能正好拿回原来的 id**：id 取「当前最小的空位」，所以 expand → collapse 走一趟，
+  块往往还叫 `T-001#B-002`（锚点是位置，不是身份）。
+
+**两个都先查环、都能空跑**：结构改完若块依赖成环，直接报错**且 plan.json 一个字都不写**；
+`--dry-run` 只打印会改什么（新任务/新链、落点、哪些块改接线、哪些任务被删），也什么都不写 ——
+动真 plan 之前先看一眼。
+
 ## 一次协作回合的固定动作
 
 1. **读**：`plan.py current <slug>` —— 现在能动的块；先看这个再说话。
@@ -119,6 +167,10 @@ py block <slug> --task T-001 --title "…" --kind impl|review|decision|research 
    [--owner x] [--status blocked]
 py set <slug> <ref> <status> [--by x] [--note "…"] [--artifact <路径>] [--at ISO]
       [--doc "…"] [--done-when "…"]      # 事实变了就改块原文，别只写在日志里
+py expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2"] [--dry-run]
+                                         # 一个块 → 一个任务（块成为第一步）
+py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
+                                         # 一个任务 → 一个块（默认回展开前的位置）
 py note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
 py current <slug>                        # 现在该谁动
 py check <slug>                          # 图质量（有错误 exit 1）
@@ -176,6 +228,10 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 - `set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。
 - **块的 `deps` 只能在建块时一次给全**：`plan.py` 没有「给已有块加依赖」的命令（`set` 不接受 `--deps`）。
   想拆成「先建块、再补依赖」两步，只会建出一堆空标题的重复块 —— 建块时就把 `--deps <task>#<block>` 传对。
+  事后要改依赖只有 `expand` / `collapse` 两条路（它们把前后接线一次改对并查环），或者 `rm` 重建。
+- **`collapse --into` 落进一个有任务级依赖的任务会继承它的全部块**：`block_deps` 会把落点任务的
+  任务级前置展开成「那些任务的每一个块」，所以压出来的块可能凭空多等一批块、甚至成环。
+  报错里会点名是哪个任务级依赖；换个落点或用 `--keep-task` 即可。
 - **`new --owner "you=…"` 传了也没用**：`cmd_new` 在循环之后无条件再 `add_participant(plan, "you=human:本人")`，
   把你刚填的 label/channel 覆盖掉（同名 id 先删后加）。要让人类参与方带上 Discord 身份，就**另起一个 id**
   （如 `stronghold=human:Stronghold3369@discord:<thread>`），块上仍用 `you` 当 owner（digest `--to you` 会显示「你」）。

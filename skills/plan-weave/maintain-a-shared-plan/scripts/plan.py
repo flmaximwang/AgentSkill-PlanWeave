@@ -14,6 +14,10 @@ block 的状态机：pending → ready(派生) → claimed → running → revie
 评审打回 = 从 review 回到 claimed（块还是原 owner 的，只是重做一遍），打回原因存进 block.feedback，
 次数由 runs 里数出来（plan.html 显示成 ⟲N）。
 
+粒度可以调：一个块太大 → `expand` 把它变成一个任务（块本身成为第一步，`--step` 依次追加后续步骤）；
+一个任务的各步太琐碎 → `collapse` 把任务压回一个块。两个动作都把「谁在等它 / 它在等谁」一次改对，
+不需要手删重建。
+
 时间戳一律本地时区 ISO8601。全部 stdlib，无第三方依赖。
 """
 
@@ -27,6 +31,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from typing import NoReturn
 
 HERE = Path(__file__).resolve()
 PROFILE_HOME = HERE.parents[4]          # scripts/ -> <skill>/ -> <cat>/ -> skills/ -> profile home
@@ -110,8 +115,9 @@ def commit(slug: str, plan: dict, a=None) -> None:
     render_all(slug, plan)
 
 
-def die(msg: str, code: int = 2):
-    print(msg, file=sys.stderr)
+def die(msg: str, code: int = 2, quiet: bool = False) -> NoReturn:
+    if not quiet:
+        print(msg, file=sys.stderr)
     sys.exit(code)
 
 
@@ -121,21 +127,24 @@ def all_blocks(plan: dict):
             yield t, b
 
 
-def find(plan: dict, ref: str):
-    """ref = T-001 或 T-001#B-001（也接受 B-003 这种块内唯一后缀）"""
+def find(plan: dict, ref: str, quiet: bool = False):
+    """ref = T-001 或 T-001#B-001（也接受 B-003 这种块内唯一后缀）
+
+    quiet=True 时找不到也不打 stderr（给 find_soft 用，见下）。
+    """
     if "#" in ref:
         tid, bid = ref.split("#", 1)
         for t, b in all_blocks(plan):
             if t["id"] == tid and b["id"].split("#")[1] == bid:
                 return t, b
-        die(f"找不到块 {ref}")
+        die(f"找不到块 {ref}", quiet=quiet)
     for t in plan["tasks"]:
         if t["id"] == ref:
             return t, None
     for t, b in all_blocks(plan):
         if b["id"].split("#")[1] == ref:
             return t, b
-    die(f"找不到 {ref}")
+    die(f"找不到 {ref}", quiet=quiet)
 
 
 def blocks_of(plan: dict, tid: str):
@@ -146,9 +155,9 @@ def blocks_of(plan: dict, tid: str):
 
 
 def find_soft(plan: dict, ref: str):
-    """find() 但不退出进程（外部引用可能还没建）。"""
+    """find() 但不退出进程（外部引用可能还没建），也不打 stderr。"""
     try:
-        return find(plan, ref)
+        return find(plan, ref, quiet=True)
     except SystemExit:
         return None, None
 
@@ -267,6 +276,51 @@ def stale_blocks(plan: dict, hours: float):
             h = hours_since(b.get("status_since") or plan["updated_at"])
             if h is not None and h >= hours:
                 out.append((t, b, h))
+    return out
+
+
+# ---------------------------------------------------------------- 粒度调整
+
+STEP_ORDER = ["pending", "blocked", "claimed", "running", "review", "done"]
+
+
+def block_graph(plan: dict) -> dict:
+    """块级依赖图（任务级依赖已落到块、含 review_of），供环检测。"""
+    g = {}
+    for t, b in all_blocks(plan):
+        g[b["id"]] = [d for d in block_deps(plan, t, b) if find_soft(plan, d)[1] is not None]
+    return g
+
+
+def guard_acyclic(plan: dict, what: str) -> None:
+    c = cycle(block_graph(plan))
+    if c:
+        die(f"{what} 会让块依赖成环：{' → '.join(c)}（没有写入任何东西）")
+
+
+def parse_step(spec: str, default_kind: str):
+    """--step 的写法：`标题 :: 做什么 :: 判据1;判据2 :: kind`（后三段可省）。"""
+    parts = [p.strip() for p in spec.split("::")]
+    parts += [""] * max(0, 4 - len(parts))
+    title, doc, crits, kind = parts[0], parts[1], parts[2], parts[3] or default_kind
+    if not title:
+        die(f"--step 缺标题：{spec!r}（写法：标题 :: 做什么 :: 判据1;判据2）")
+    criteria = [c.strip() for c in re.split(r"[;；]", crits) if c.strip()]
+    return title, doc, criteria, kind
+
+
+def next_block_id(plan: dict, task: dict) -> str:
+    return f"{task['id']}#" + next_ids(plan, "B-", [b["id"].split("#")[1] for b in task["blocks"]])
+
+
+def refs_to(plan: dict, ids: set) -> list:
+    """哪些块把 ids 里的任一 id 当依赖或评审对象（含任务级依赖落下来的）。"""
+    out = []
+    for _t, b in all_blocks(plan):
+        if b["id"] in ids:
+            continue
+        if set(deps_of(b)) & ids or (b.get("review_of") in ids):
+            out.append(b["id"])
     return out
 
 
@@ -419,6 +473,266 @@ def cmd_rm(a):
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=task["id"])
     commit(a.slug, plan, a)
     print(f"✓ 已删除任务 {task['id']}（含 {n} 个块）")
+
+
+def cmd_expand(a):
+    """把一个块（B）展开成一个任务（T）：原块成为第一步，--step 依次追加后续步骤。
+
+    前后关系一次改对：等这个块的块改等新链尾；这个块自己的前置原样成为第一步的前置。
+    """
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    if block is None:
+        die(f"{a.ref} 是任务不是块 —— expand 作用于块（T-001#B-002 或 B-002）；"
+            f"要把任务的块合并起来用 collapse")
+    pre = {b["id"]: set(block_deps(plan, t, b)) for t, b in all_blocks(plan)}
+    src, xid, xpos = task, block["id"], task["blocks"].index(block)
+    tid = next_ids(plan, "T-", [t["id"] for t in plan["tasks"]])
+    title = a.title or block["title"]
+    owner = a.owner or block.get("owner") or src.get("owner", "")
+    steps = [parse_step(s, block.get("kind") or "impl") for s in (a.step or [])]
+    tail = f"{tid}#B-{len(steps) + 1:03d}"
+    users = [b["id"] for _t, b in all_blocks(plan) if b["id"] != xid and xid in pre.get(b["id"], set())]
+
+    if a.dry_run:
+        print(f"[dry-run] 新任务 {tid}「{title}」（插在 {src['id']} 之后 · owner={owner or '-'}）")
+        print(f"[dry-run]   {xid}「{block['title']}」→ {tid}#B-001（原地保留，只换 id）")
+        for i, (t_, d_, c_, k_) in enumerate(steps, start=2):
+            print(f"[dry-run]   第 {i} 步 {tid}#B-{i:03d}「{t_}」({k_}) · 判据 {len(c_)} 条")
+        print(f"[dry-run] 改等新链尾 {tail} 的块：{users or '（无）'}")
+        if not src["blocks"]:
+            print(f"[dry-run] {src['id']} 会是空的 → 删除，并把指向它的任务级依赖转给 {tid}")
+        print("[dry-run] 没写任何文件")
+        return
+
+    new_task = {
+        "id": tid, "title": title, "owner": owner, "status": "pending",
+        "deps": [], "blocks": [], "note": a.note or "",
+        "expanded_from": {"task": src["id"], "block": xid, "index": xpos},
+    }
+    src["blocks"] = [b for b in src["blocks"] if b["id"] != xid]
+    block["id"] = f"{tid}#B-001"
+    new_task["blocks"].append(block)
+    chain = [block]
+    for i, (t_, d_, c_, k_) in enumerate(steps, start=2):
+        nb = {"id": f"{tid}#B-{i:03d}", "title": t_, "kind": k_, "status": "pending",
+              "owner": owner, "doc": d_, "done_when": c_, "artifacts": [],
+              "deps": [chain[-1]["id"]], "review_of": "", "feedback": "",
+              "status_since": now(), "runs": []}
+        new_task["blocks"].append(nb)
+        chain.append(nb)
+    plan["tasks"].insert(plan["tasks"].index(src) + 1, new_task)
+
+    rewired = []
+    for _t, b in all_blocks(plan):
+        if b["id"].split("#")[0] == tid or xid not in pre.get(b["id"], set()):
+            continue
+        if b.get("review_of") == xid:
+            b["review_of"] = tail
+            moved_review = True
+        else:
+            moved_review = False
+        if xid in deps_of(b):
+            b["deps"] = [tail if d == xid else d for d in b["deps"]]
+        elif not moved_review and tail not in deps_of(b):
+            b.setdefault("deps", []).append(tail)
+        rewired.append(b["id"])
+
+    dropped = ""
+    if not src["blocks"]:
+        for t in plan["tasks"]:
+            if t["id"] != tid and src["id"] in (t.get("deps") or []):
+                t["deps"] = [tid if d == src["id"] else d for d in t["deps"]]
+        plan["tasks"].remove(src)
+        dropped = f"；原任务 {src['id']} 已空 → 删除，指向它的任务级依赖转给 {tid}"
+    guard_acyclic(plan, f"把 {xid} 展开成任务 {tid}")
+    log_event(plan, "expand",
+              f"展开块 {xid} → 任务 {tid}「{title}」"
+              f"（{len(chain)} 步：{' → '.join(b['id'] for b in chain)}）"
+              + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=tid)
+    commit(a.slug, plan, a)
+    print(f"✓ {xid} → {tid}「{title}」（{len(chain)} 步 · owner={owner or '-'}）")
+    for b in chain:
+        print(f"    {b['id']}  {b['title']}"
+              + (f"  ⟵ 等 {b['deps']}" if b.get("deps") else ""))
+    print(f"  改等链尾的块：{rewired or '（无）'}{dropped}")
+
+
+def cmd_collapse(a):
+    """把一个任务（T）压成一个块（B）：各步合成一块，前后接线一次改对。
+
+    块必须住在某个任务里，所以「压」要交代落点：--keep-task（留在本任务，只剩这一块）、
+    --into <块/任务>（插到别处）、默认回展开前的位置，再不行落进它等着的那个任务。
+    """
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    if block is not None:
+        die(f"{a.ref} 是块不是任务 —— collapse 作用于任务（T-001）")
+    if a.into and a.keep_task:
+        die("--into 与 --keep-task 只能给一个")
+    live = [b for b in task["blocks"] if b["status"] != "cancelled"]
+    if not live:
+        die(f"任务 {task['id']} 没有在册的块（空的或全 cancelled），没什么可压")
+    all_ids = {b["id"] for b in task["blocks"]}
+    live_ids = {b["id"] for b in live}
+    pre = {b["id"]: set(block_deps(plan, t, b)) for t, b in all_blocks(plan)}
+    norm = ["pending" if block_effective(plan, b, task) in ("ready", "waiting")
+            else block_effective(plan, b, task) for b in live]
+    uniq = sorted(set(norm), key=lambda s: STEP_ORDER.index(s))
+    if len(uniq) > 1 and not a.force:
+        die("任务里各块状态不一致：" + "、".join(f"{b['id']}={e}" for b, e in zip(live, norm))
+            + " —— 压成一块会丢掉这个区别，确认后加 --force（会取最靠前的那个状态）")
+    status = uniq[0]
+
+    # 落点
+    home, insert_at, where = None, None, ""
+    if a.keep_task:
+        home, insert_at = task, min(i for i, b in enumerate(task["blocks"]) if b["id"] in live_ids)
+        where = f"--keep-task（留在 {task['id']}）"
+    elif a.into:
+        ht, hb = find(plan, a.into)
+        if ht["id"] == task["id"]:
+            die(f"--into 指回同一个任务（{task['id']}）—— 要在原位合并就用 --keep-task")
+        home = ht
+        insert_at = ([b["id"] for b in ht["blocks"]].index(hb["id"]) + 1) if hb else len(ht["blocks"])
+        where = f"--into {a.into}"
+    else:
+        ef = task.get("expanded_from") or {}
+        ot, _ = find_soft(plan, ef.get("task") or "")
+        if ot is not None:
+            home, insert_at = ot, min(ef.get("index") or 0, len(ot["blocks"]))
+            where = f"回展开前的位置（{ot['id']}）"
+        else:
+            preds = {}
+            entries = [b for b in live if not (set(deps_of(b)) & live_ids)]   # 链的入口块
+            for b in entries:
+                for d in pre.get(b["id"], set()):
+                    pt, _pb = find_soft(plan, d)
+                    if pt is not None and pt["id"] != task["id"]:
+                        preds[pt["id"]] = pt
+            if len(preds) == 1:
+                home = list(preds.values())[0]
+                insert_at = len(home["blocks"])
+                where = f"落到它等着的任务（{home['id']}）末尾"
+            else:
+                die("不知道把压出来的块放在哪：给 --into <块或任务>（明确插到某处）或 --keep-task"
+                    "（留在本任务里只剩一块）。\n"
+                    f"  它等的任务：{sorted(preds) or '（无）'}；"
+                    f"依赖它的任务：{[t['id'] for t in plan['tasks'] if task['id'] in (t.get('deps') or [])]}")
+
+    # 合并后这一块的内容：能逐字保留的都逐字保留
+    doc = a.doc or (live[0].get("doc") or "" if len(live) == 1 else
+                    "\n".join(f"{i}. {b['title']}：{b.get('doc') or '（无说明）'}"
+                              for i, b in enumerate(live, 1)))
+    if a.done_when:
+        crit = list(a.done_when)
+    else:
+        crit, seen = [], set()
+        for b in live:
+            for c in (b.get("done_when") or []):
+                if c not in seen:
+                    seen.add(c)
+                    crit.append(c)
+    kinds = {b.get("kind") for b in live}
+    kind = a.kind or (kinds.pop() if len(kinds) == 1 else "impl")
+    ext = []
+    for b in live:
+        for d in deps_of(b):
+            if d not in all_ids and d not in ext:
+                _, db = find_soft(plan, d)
+                if db is not None:
+                    ext.append(d)
+    if home is not task:      # 落在本任务里时，任务级依赖照样生效，不必再落成显式 deps
+        for dep_tid in (task.get("deps") or []):
+            for t2 in plan["tasks"]:
+                if t2["id"] == dep_tid:
+                    for b2 in t2["blocks"]:
+                        if b2["status"] != "cancelled" and b2["id"] not in ext:
+                            ext.append(b2["id"])
+    rviews = {b["review_of"] for b in live if b.get("review_of") and b["review_of"] not in all_ids}
+    arts = []
+    for b in live:
+        arts += [x for x in (b.get("artifacts") or []) if x not in arts]
+    runs = sorted([dict(r, block=b["id"]) for b in live for r in (b.get("runs") or [])],
+                  key=lambda r: r.get("at") or "")
+    folded = [{"id": b["id"], "title": b["title"], "kind": b.get("kind"), "status": b["status"],
+               "doc": b.get("doc") or "", "done_when": list(b.get("done_when") or [])}
+              for b in task["blocks"]]
+    mid = next_block_id(plan, home)
+    merged = {"id": mid, "title": a.title or task["title"], "kind": kind, "status": status,
+              "owner": a.owner or task.get("owner") or live[0].get("owner") or "",
+              "doc": doc, "done_when": crit, "artifacts": arts, "deps": ext,
+              "review_of": (rviews.pop() if len(rviews) == 1 else ""),
+              "feedback": (live[0].get("feedback") or "") if len(live) == 1 else "",
+              "status_since": now(), "runs": runs, "folded_from": folded}
+
+    if a.dry_run:
+        print(f"[dry-run] {task['id']}「{task['title']}」（{len(live)} 块）→ 1 块 {mid}「{merged['title']}」")
+        for b, e in zip(live, norm):
+            print(f"[dry-run]   {b['id']} [{e}] {b['title']}")
+        print(f"[dry-run] 状态 {status}（{'/'.join(uniq)}）· 判据 {len(crit)} 条 · "
+              f"入口依赖 {ext or '（无）'} · kind {kind}")
+        print(f"[dry-run] 落点：{where}"
+              + ("（任务会删除）" if home is not task else "（任务保留）"))
+        print(f"[dry-run] 改接线的块：{refs_to(plan, all_ids) or '（无）'}")
+        print("[dry-run] 没写任何文件")
+        return
+
+    if home is task:
+        task["blocks"] = [b for b in task["blocks"] if b["id"] not in all_ids]
+        task["blocks"].insert(insert_at, merged)
+        removed = False
+    else:
+        home["blocks"].insert(insert_at, merged)
+        plan["tasks"].remove(task)
+        removed = True
+
+    rewired = []
+    for t, b in all_blocks(plan):
+        if b["id"] == mid or b["id"] in all_ids:
+            continue
+        changed = False
+        if b.get("review_of") in all_ids:
+            b["review_of"] = mid
+            changed = True
+        if set(deps_of(b)) & all_ids:
+            keep = []
+            for d in deps_of(b):
+                nd = mid if d in all_ids else d
+                if nd not in keep:
+                    keep.append(nd)
+            b["deps"] = keep
+            changed = True
+        if changed:
+            rewired.append(b["id"])
+    if removed:
+        for t in plan["tasks"]:
+            if task["id"] in (t.get("deps") or []):
+                t["deps"] = [d for d in t["deps"] if d != task["id"]]
+                for b in t["blocks"]:
+                    if pre.get(b["id"], set()) & live_ids and mid not in deps_of(b):
+                        b.setdefault("deps", []).append(mid)
+                        if b["id"] not in rewired:
+                            rewired.append(b["id"])
+    cyc = cycle(block_graph(plan))
+    if cyc:
+        hint = ""
+        if home is not task and (home.get("deps") or []):
+            hint = (f"\n  提示：落点任务 {home['id']} 有任务级依赖 {home.get('deps')}，"
+                    f"它里面的块会自动等那些任务的**所有**块 —— 换个 --into，或用 --keep-task")
+        die(f"把任务 {task['id']} 压成块 {mid} 会让块依赖成环：{' → '.join(cyc)}"
+            f"（没有写入任何东西）{hint}")
+    log_event(plan, "collapse",
+              f"压缩任务 {task['id']}「{task['title']}」（{len(live)} 块 → 1 块）为 {mid}「{merged['title']}」"
+              + ("（任务已删除）" if removed else "（任务保留）")
+              + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=mid)
+    commit(a.slug, plan, a)
+    print(f"✓ {task['id']}（{len(live)} 块）→ {mid}「{merged['title']}」 [{status}]"
+          + ("" if removed else "（任务保留）"))
+    for b, e in zip(live, norm):
+        print(f"    {b['id']} [{e}] {b['title']}")
+    print(f"  落点：{where} · 判据 {len(crit)} 条 · 入口依赖 {ext or '（无）'}")
+    print(f"  改接线的块：{rewired or '（无）'}")
 
 
 def cmd_note(a):
@@ -813,12 +1127,44 @@ def main(argv=None):
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_rm)
 
+    p = sub.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
+    p.add_argument("slug")
+    p.add_argument("ref", help="要展开的块：T-001#B-002 或 B-002")
+    p.add_argument("--title", default="", help="新任务的标题（默认沿用块标题）")
+    p.add_argument("--step", action="append", default=[],
+                   help="追加的后续步骤，可多次、按顺序：标题 :: 做什么 :: 判据1;判据2 :: kind")
+    p.add_argument("--owner", default="")
+    p.add_argument("--note", default="", help="为什么展开（会记进日志）")
+    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_expand)
+
+    p = sub.add_parser("collapse", aliases=["compress"],
+                       help="把一个任务压成一个块（默认回展开前的位置）")
+    p.add_argument("slug")
+    p.add_argument("ref", help="要压缩的任务：T-001")
+    p.add_argument("--into", default="",
+                   help="压出来的块放哪：块 ref（插到它之后）或任务 ref（追加到末尾）")
+    p.add_argument("--keep-task", dest="keep_task", action="store_true",
+                   help="保留本任务，只把各块并成一块（不删任务）")
+    p.add_argument("--title", default="")
+    p.add_argument("--doc", default="", help="合并块的「做什么」；不给就拼各步的")
+    p.add_argument("--done-when", dest="done_when", action="append", default=[],
+                   help="合并块的判据；不给就取各步判据的并集（逐字保留）")
+    p.add_argument("--kind", choices=KINDS)
+    p.add_argument("--owner", default="")
+    p.add_argument("--note", default="", help="为什么压缩（会记进日志）")
+    p.add_argument("--force", action="store_true", help="各块状态不一致时仍然压")
+    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_collapse)
+
     p = sub.add_parser("note", help="写一条总结/决定进日志")
     p.add_argument("slug")
     p.add_argument("text")
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
-                            "block", "status"])
+                            "block", "status", "expand", "collapse"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_note)

@@ -66,8 +66,12 @@ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 
   `MEDIA:` 附件一行。两条都要，原因不同 —— `file://` 文本在 Discord 里不可点，附件在 Discord 里
   才变成可点的链接。**截图降为可选补充，永远不许顶掉这两条**（截图一改就过期，URL 指向的文件永远最新）。
   给 **agent** 的是另一份：`plan.json` / `PLAN.md` 的绝对路径。
-- 可执行入口 `scripts/plan.py`：纯 stdlib 单文件，`list` / `new` / `task` / `block` / `set` / `note` /
-  `current` / `check` / `digest` / `render` 全部命令在 SKILL.md 的速查表里，可直接复制。
+- **粒度可调（expand / collapse）**：一个块干着干着发现是三件事 → `expand` 把它升级成**一个任务**
+  （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `collapse` 压回**一个块**
+  （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
+  一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
+- **可执行入口** `scripts/plan.py`：纯 stdlib 单文件，`list` / `new` / `task` / `block` / `set` / `note` /
+  `current` / `check` / `digest` / `render` / `expand` / `collapse` 全部命令在 SKILL.md 的速查表里，可直接复制。
 
 ## skills/plan-weave/remind-collaborators
 
