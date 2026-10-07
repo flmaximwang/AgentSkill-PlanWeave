@@ -66,28 +66,20 @@
              justify-content:space-between;gap:6px}
   .node.done{opacity:.6}
   .node.cancelled{border-left-style:dashed}
-  /* 详情栏：固定在右侧、占满整页高度（不再拖来拖去）；body 同步让出这段宽度，
-     所以画布不会被盖住。宽度由 #splitter 这条分隔线拖拽控制。 */
-  body.detail-open{padding-right:var(--detail-w)}
+  /* 详情栏：常驻右侧、占满整页高度（不是点开才出现 —— 页面布局因此一次都不跳）；body 常驻让出
+     这段宽度，所以画布不会被盖住。宽度由 #splitter 这条分隔线拖拽控制。 */
+  body{padding-right:var(--detail-w)}
   #detailpanel{position:fixed;right:0;top:0;bottom:0;width:var(--detail-w);z-index:60;
-               display:none;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);
+               display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);
                box-shadow:-10px 0 30px rgba(16,24,40,.10);overflow:hidden}
-  #detailpanel.open{display:flex}
   #detailbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
              padding:6px 8px 6px 12px;border-bottom:1px solid var(--line);background:var(--bg);
              user-select:none}
-  #splitter{position:fixed;top:0;bottom:0;right:var(--detail-w);width:9px;z-index:61;
-            display:none;cursor:col-resize}
-  body.detail-open #splitter{display:block}
+  #splitter{position:fixed;top:0;bottom:0;right:var(--detail-w);width:9px;z-index:61;cursor:col-resize}
   #splitter::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--line)}
   #splitter:hover::after,#splitter.dragging::after,#splitter:focus-visible::after{
             left:3px;width:3px;background:var(--running)}
   #detailbar b{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
-  #detailbar .dbtns{display:flex;gap:4px}
-  #detailbar button{border:1px solid var(--line);background:var(--panel);color:var(--dim);
-                    border-radius:6px;width:24px;height:22px;padding:0;line-height:1;font-size:14px;
-                    cursor:pointer}
-  #detailbar button:hover{color:var(--ink);border-color:var(--dim)}
   #detail{padding:14px 16px;font-size:13px;overflow:auto;flex:1 1 auto;min-height:0}
   @media (max-width:900px){
     /* 窄屏别让详情栏吃掉画布：默认栏宽收窄（拖过分隔线的话以拖出来的宽度为准） */
@@ -131,7 +123,7 @@
       <h2>任务图（块 = 文档，边 = 依赖）</h2>
       <div class="toolbar">
         <label><input type="checkbox" id="hidedone"> 隐藏已完成</label>
-        <span>点节点或卡片看详情（详情固定在右侧，拖分隔线调宽度 · Esc 关闭）</span>
+        <span>点节点或卡片看详情（详情常驻右侧，拖分隔线可调宽度）</span>
       </div>
       <div id="graph"><svg id="edges"></svg></div>
       <div class="legend" id="legend"></div>
@@ -145,7 +137,6 @@
 <aside id="detailpanel">
   <div id="detailbar">
     <b>详情</b>
-    <span class="dbtns"><button id="detailclose" title="关闭（Esc）">&times;</button></span>
   </div>
   <div id="detail"><p class="goal">点任务图里的节点，或「现在该谁动」里的卡片。</p></div>
 </aside>
@@ -363,14 +354,6 @@ function markSel(bid){
   document.querySelectorAll('.node,.nowcard').forEach(m =>
     m.classList.toggle('sel', m.dataset.id === bid));
 }
-function closeDetail(){
-  const p = document.getElementById('detailpanel');
-  if (!p.classList.contains('open')) return;       // Esc 随时会按，别无谓重排
-  p.classList.remove('open');
-  document.body.classList.remove('detail-open');
-  CUR = null; markSel(null);
-  view('graph', graph);                            // 画布把让给详情栏的宽度收回来
-}
 function detail(b, opts){
   if (!b) return;
   CUR = b;
@@ -391,11 +374,6 @@ function detail(b, opts){
         `<div class="run">${esc((r.at||'').slice(0,16).replace('T',' '))} ${esc(r.by||'')}
          ${esc(r.from||'')}→${esc(r.to||'')}<br>${esc(r.note||'')}</div>`).join('')}`:''}
   `;
-  document.getElementById('detailpanel').classList.add('open');
-  if (!document.body.classList.contains('detail-open')){
-    document.body.classList.add('detail-open');
-    view('graph', graph);                          // 画布让出详情栏的宽度，节点按新宽度重排
-  }
   markSel(b.id);
   if (opts && opts.reveal){
     const n = [...document.querySelectorAll('.node')].find(m => m.dataset.id === b.id);
@@ -420,12 +398,10 @@ function journal(){
     : '<div>（空）</div>';
 }
 
-view('header', header); view('nownext', nownext); view('legend', legend);
-view('graph', graph); view('journal', journal);
-document.getElementById('detailclose').onclick = closeDetail;
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
-// ── 详情栏宽度：固定在右侧、占满整页高度；一条分隔线同时改「详情栏宽」与「画布宽」
-//    （画布宽 = 窗口宽 − 详情栏宽：body 让出同样的 padding-right，节点因此不会被详情盖住）
+// ── 详情栏：常驻右侧（不是点开才出现，所以点节点不会改动页面布局）；一条分隔线同时改
+//    「详情栏宽」与「画布宽」（画布宽 = 窗口宽 − 详情栏宽，body 让出同样的 padding-right）
+//    必须放在下面 view('graph', …) 之前：先把宽度（含 localStorage 里记着的）定下来，
+//    否则首帧会按默认宽排一遍、再按记住的宽排第二遍（白白跳一次）
 const DWKEY = 'plan.detailw.' + (PLAN.slug || '');
 const DWMIN = 240, CANVASMIN = 360;    // 栏最小宽 / 画布最小宽
 let detailW = null;                    // null = 用 CSS 里的默认宽度（clamp，随窗口伸缩）
@@ -467,6 +443,9 @@ try { const s = localStorage.getItem(DWKEY); if (s) setDetailW(parseFloat(s), fa
     try { localStorage.setItem(DWKEY, String(detailW)); } catch(e){}
   });
 })();
+
+view('header', header); view('nownext', nownext); view('legend', legend);
+view('graph', graph); view('journal', journal);
 document.getElementById('hidedone').onchange = () => view('graph', graph);
 // 窗口尺寸变了：先把详情栏宽度夹进新窗口，再按新宽度重排；拖动窗口会连发 resize，用 rAF 合帧
 window.addEventListener('resize', () => {
