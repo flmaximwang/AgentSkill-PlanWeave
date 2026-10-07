@@ -7,8 +7,9 @@
 - **包**：仓库根目录的 `loomerto/`（纯 stdlib、零依赖、`requires-python >= 3.9`）。
   名字 = **loom + concerto**：协奏曲里**独奏与乐队主次分明、却同演一曲** —— 正对「一个人 + 几个 agent
   在同一份 plan 上各按自己的声部推进，谁主谁次写在脸上」；loom 那一半接着说多条工作线被织成一块布。
-- **skill**：`skills/` 下的五条（给 Hermes profile `plan-weave` 用，角色是**协作计划记录员**）。
-  skill 不夹带实现，只带一个薄壳（`scripts/plan.py`）去调这个包。
+- **skill**：`skills/` 下的五条，随包发布（本机装在 **default** profile、类目 `loomerto`；其中
+  `intake-a-running-collaboration` 按仓库路径归 `agent-orchestration`）。skill 不夹带实现，
+  只带一个薄壳（`scripts/plan.py`）去调这个包。
 - **public 仓库**：内容与具体机器无关，可分享。
 
 ## 文档地图（先读哪个）
@@ -38,26 +39,31 @@ plan 目录**不靠猜**：`--plans-root <路径>` → `--profile <名字>`（= 
 **2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 
 ```bash
-for s in "plan-weave/maintain-a-shared-plan:plan-weave" \
-         "plan-weave/remind-collaborators:plan-weave" \
-         "plan-weave/check-plan-temp-hygiene:plan-weave" \
-         "plan-weave/check-plan-node-commands:plan-weave" \
+for s in "plan-weave/maintain-a-shared-plan:loomerto" \
+         "plan-weave/remind-collaborators:loomerto" \
+         "plan-weave/check-plan-temp-hygiene:loomerto" \
+         "plan-weave/check-plan-node-commands:loomerto" \
          "agent-orchestration/intake-a-running-collaboration:agent-orchestration"; do
   path="${s%%:*}"; cat="${s##*:}"
-  hermes --profile plan-weave skills install \
+  hermes skills install \
     "flmaximwang/AgentSkill-PlanWeave/skills/$path" --category "$cat" -y
 done
 ```
 
-`--category` **只在安装时读取**：换分类 = uninstall + 带新 `--category` 重装。skill 目录是 per-profile 的
-（`$HERMES_HOME/profiles/plan-weave/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
+`--category` **只在安装时读取**：换分类 = uninstall + 带新 `--category` 重装（「改类目」是一次显式的退役 +
+重装，不是原地改名）。skill 目录是 per-profile 的（default 是 `~/.hermes/skills/`，其余 profile 是
+`$HERMES_HOME/profiles/<名字>/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
+
+**本机现状（2026-10-07）：** 包用 `uv tool install --editable <repo>` 装好（`loomerto` / `plan` 在
+`~/.local/bin`）；五条 skill 装在 **default** profile、类目 `loomerto`（intake 那条按仓库路径归
+`agent-orchestration`），lock 的 `source_revision` = `21db8e6`，装好的副本与仓库**逐份 `diff -rq` 一致**。
+`plan-weave` profile 里还留着**旧一代**（类目 `plan-weave`，revision 停在 `c6f071b`/`19724db`）——
+那台记录员 bot 退役时要一起清。
 
 **skill 里的 `scripts/plan.py` 是薄壳**：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」交给包，
 再按 `checkout → $LOOMERTO_HOME → 已安装的 import → 已装好的 loomerto 命令` 的顺序找包；四条都不成立时，
 它会明确告诉你 `uv tool install --editable <repo>`（而不是抛一个看不懂的 ImportError）。
 
-**当前状态：** 包已在本机装好（`uv tool install --editable`，`loomerto` / `plan` 在 `~/.local/bin`）；
-`plan-weave` profile 的五条 skill 都是 hub 安装、有 lock 条目，`source_revision` 随 `main`。
 **本仓库是这些 skill 与这个包的唯一 source of truth**：改这里 → `git push` → `hermes skills update <name>` 取新版。
 
 ## 索引
