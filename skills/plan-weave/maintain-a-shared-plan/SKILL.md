@@ -48,6 +48,7 @@ $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scri
 | task（节点） | 一条工作线 | 可带任务级 `deps`（别的任务） |
 | block（文档） | 一份可独立认领、可评审的工作 | 有 `doc`（做什么）和 `done_when`（判据），**没有判据的块不许建** |
 | run | 一次执行记录 | 改状态时自动追加，带 `by` 和 `note` |
+| exec | **谁在做 + 那条子代理线程**（认领之外的第二个身份） | 只记现在时：`by` / `delegation` / `task_index` / `transcript` / `started`；收工自动清掉 |
 
 **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/blocked/cancelled`；`ready` 与
 `waiting` 由依赖算出来（依赖全 done ⇒ ready）。想写 `ready` 会被拒绝是**故意的**——两处真相就是这个
@@ -142,6 +143,45 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 `--dry-run` 只打印会改什么（新任务/新链、落点、哪些块改接线、哪些任务被删），也什么都不写 ——
 动真 plan 之前先看一眼。
 
+## 谁认领了 / 谁在做 / 线程在哪
+
+一个块上站着**两个人**：**认领人**（接了这块的人/agent，`owner`）与**在做的人**（此刻真正动手的那个，
+`exec.by`）—— 记录员认领、子代理动手时两者不是同一个人，所以必须分开写。第三个问题是**那条子代理线程在哪**，
+这是「检查子代理是否正常工作」唯一的入口。
+
+| 问 | 看哪 | 怎么写 |
+|---|---|---|
+| 谁认领了 | 块的 `owner` + runs 里最后一条进入 `claimed` 的记录 | `py set <slug> <ref> claimed --by <谁> [--owner <谁>]` |
+| 谁在做 | `exec.by` | `py set … running --by <谁>` 自动写上；换人时旧线程登记会被清掉 |
+| 线程在哪 | `exec.delegation` + `exec.task_index` + `exec.transcript` | `py exec <slug> <ref> --by <谁> --delegation deleg_xxxxxxxx [--task-index N]` |
+
+```bash
+py exec <slug> T-002#B-001 --by default --delegation deleg_05e3c787 --task-index 0 \
+        --note "前半段：写脚本"    # 转录路径按 --profile 自动算（默认 default），也可 --transcript 直接给绝对路径
+py exec <slug> T-002#B-001 --unset  # 线程收工 / 交回别人
+py workers <slug>                   # ← 检查：每个在途块登记的线程还在动吗
+```
+
+- **线程号从哪来**：`delegate_task` 返回的 `delegation_id`（`deleg_xxxxxxxx`）与它在该批次里的
+  `task_index`（本文档一律写成 `deleg_05e3c787#0` 这种形式）。转录文件 = hermes home 下的
+  `cache/delegation/live/<delegation_id>/task-<n>.log`（default profile 的 home 是 `~/.hermes`，
+  其余是 `~/.hermes/profiles/<profile>/`）；给了 `--profile` 就自动算出路径。
+- **`workers` 七种结论，一个都不许合并**：`✅ 在动`（转录最近还在写）/ `⏳ 静默`（超 `--stale-min`
+  —— 默认 30 分钟没写一行，可能卡住或已死）/ `⚠ 线程已结束`（manifest 说这条线程已 completed/failed，
+  而块还挂在 running ⇒ **该对账**）/ `❌ 号记错`（delegation 目录在，但没有这个 task 的转录）/
+  `❓ 看不到`（连目录都不在：过了 7 天保留期 / 在别的机器上 / 号记错）/ `➖ 无线程`（人在做，或谁在做
+  都没登记）/ `➖ 已无意义`（块已不在途，登记还挂着）。**只有 `⚠` 与 `❌` 退 1**（先对账再往下走）；
+  `⏳ ❓ ➖` 只提示、退 0。`--json` 给 agent 读。
+- **`❓ 看不到` ≠「子代理没在跑」**：live 转录 7 天就被回收，跨机器也看不到。说得出「看不到」，
+  说不出「没在跑」。要更硬的判活，去**线程所在的那个 profile** 里用 `delegate_task action='list'`
+  （那里比 pid + 进程启动时间指纹），别在这边把「读不到」写成结论。
+- **它只看文件、不读库**：`workers` 只读转录与同目录的 `manifest.json`（纯 stdlib、跨 profile、跨机器
+  都能跑）。所以它能回答「还在写吗 / 结束了吗」，回答不了「进程还活着吗」—— 后者走上面那条升级路径。
+- **`exec` 是现在时，不是简历**：收工（`done`/`cancelled`）或退回（`pending`）时 `plan.py` 会自动清掉它；
+  「谁做过的」留在该块的 `runs`（每条带 `by`）与日志里。
+- **线程登记短命，产物才长命**：live 转录 7 天后回收，所以线程结束前要把真正要留的证据写进块的
+  `artifacts` 或 run 的 `note`（`py set … --artifact <路径>`），别指望以后还能回读转录。
+
 ## 一次协作回合的固定动作
 
 1. **读**：`plan.py current <slug>` —— 现在能动的块；先看这个再说话。
@@ -153,8 +193,12 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
    - 补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
 4. **验证**：`plan.py check <slug>` —— 环 / 悬空依赖 / 无主就绪块 / 悬置超时。
    **有错误就别往下走**；告警要念给用户听。
-5. **提醒**：`plan.py digest <slug> --to <参与方>`，纪律见 skill `remind-collaborators`。
-6. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
+5. **登记线程**（把块派给子代理时）：`plan.py exec <slug> <ref> --by <谁> --delegation <deleg_id>
+   [--task-index N]` —— 之后随时 `plan.py workers <slug>` 就能看出这条线程是不是还在动
+   （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `exec … --unset`
+   （`set … done` 也会自动清）。
+6. **提醒**：`plan.py digest <slug> --to <参与方>`，纪律见 skill `remind-collaborators`。
+7. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
    - `check-plan-node-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
    - `check-plan-temp-hygiene`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
      `py task` / `py block` / `py set` 命令补一个收尾任务节点与「临时文件：…」声明。
@@ -175,6 +219,11 @@ py block <slug> --task T-001 --title "…" --kind impl|review|decision|research 
    [--owner x] [--status blocked]
 py set <slug> <ref> <status> [--by x] [--note "…"] [--artifact <路径>] [--at ISO]
       [--doc "…"] [--done-when "…"]      # 事实变了就改块原文，别只写在日志里
+py exec <slug> <块/任务ref> --by <谁> [--delegation deleg_xxxxxxxx] [--task-index N] \
+        [--profile <profile>] [--transcript <绝对路径>] [--note "…"] [--at ISO] [--unset]
+                                         # 谁在做 + 那条子代理线程（--unset 清掉）
+py workers <slug> [--stale-min 30] [--json]
+                                         # 在途块的线程还在动吗（已结束/号记错 ⇒ exit 1）
 py expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2"] [--dry-run]
                                          # 一个块 → 一个任务（块成为第一步）
 py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
@@ -234,6 +283,13 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 - 判断「提醒通道真的通了」的唯一判据不是 `hermes send` 回显 `sent`，而是**回读那条消息的 author.id**
   等于本 profile bot 自己的 user id（`/users/@me`）。否则可能发成了别的 profile 的 bot。
 - `set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。
+- **`set` 会自动把 `--by` 写进 `exec.by`**（没给 `--by` 就落到 owner），所以「谁在做」不用另起一道仪式；
+  **换人（`--by` 与原来不同）会连带清掉旧的 `delegation`/`transcript`** —— 旧线程不再代表这一块，这是故意的。
+- **`workers` 是 `check` 的姊妹**：`check` 查图（环 / 悬空依赖 / 无主就绪块），`workers` 查「干活的那个人」。
+  只把 `⚠ 线程已结束` 与 `❌ 号记错` 当硬信号（退 1）；`❓ 看不到` 与 `➖` 是提示 —— 但它们出现时别默认「没事」，
+  要说清是「看不到」还是「没在跑」。
+- **线程号短命，别把它当档案号**：live 转录 7 天回收、跨机器的路径在这边根本看不到。要让后人知道
+  「这块是谁做的、证据在哪」，写进 `artifacts` 与 run 的 `note`；`exec` 只保证**现在**能查在动没在动。
 - **块的 `deps` 只能在建块时一次给全**：`plan.py` 没有「给已有块加依赖」的命令（`set` 不接受 `--deps`）。
   想拆成「先建块、再补依赖」两步，只会建出一堆空标题的重复块 —— 建块时就把 `--deps <task>#<block>` 传对。
   事后要改依赖只有 `expand` / `collapse` 两条路（它们把前后接线一次改对并查环），或者 `rm` 重建。

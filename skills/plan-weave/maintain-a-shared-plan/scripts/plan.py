@@ -324,6 +324,38 @@ def refs_to(plan: dict, ids: set) -> list:
     return out
 
 
+def exec_brief(obj: dict) -> str:
+    """「谁在做」的一行摘要（` · 在做 @x（线程 deleg_xxx#0）`），没人登记就返回空串。"""
+    ex = obj.get("exec") or {}
+    if not ex.get("by"):
+        return ""
+    t = f"（线程 {ex['delegation']}#{ex.get('task_index') or 0}）" if ex.get("delegation") else ""
+    return f" · 在做 @{ex['by']}{t}"
+
+
+def claim_of(obj: dict):
+    """(谁认领的, 什么时候认领的) —— runs 里最后一次进入 claimed 的那条。"""
+    for r in reversed(obj.get("runs") or []):
+        if r.get("to") == "claimed":
+            return r.get("by") or "", r.get("at") or ""
+    return "", ""
+
+
+def hermes_home(profile: str) -> Path:
+    """线程号 → 转录路径时用的 hermes home；空 / default ⇒ 本机默认 profile 的 ~/.hermes。"""
+    base = Path.home() / ".hermes"
+    p = (profile or "").strip()
+    return base if p in ("", "default") else base / "profiles" / p
+
+
+def live_root(profile: str) -> Path:
+    return hermes_home(profile) / "cache" / "delegation" / "live"
+
+
+def transcript_path(profile: str, delegation: str, idx: int) -> Path:
+    return live_root(profile) / delegation / f"task-{idx}.log"
+
+
 # ---------------------------------------------------------------- commands
 
 def cmd_new(a):
@@ -374,7 +406,7 @@ def cmd_task(a):
         die(f"任务 {tid} 已存在")
     plan["tasks"].append({
         "id": tid, "title": a.title, "owner": a.owner or "", "status": "pending",
-        "deps": a.deps or [], "blocks": [], "note": a.note or "",
+        "deps": a.deps or [], "blocks": [], "note": a.note or "", "exec": {},
     })
     log_event(plan, "task", f"新增任务 {tid}「{a.title}」", actor=a.actor, ref=tid)
     commit(a.slug, plan, a)
@@ -393,7 +425,7 @@ def cmd_block(a):
         "status": getattr(a, "status", None) or "pending",
         "owner": a.owner or task.get("owner", ""), "doc": a.doc or "",
         "done_when": a.done_when or [], "artifacts": [], "deps": a.deps or [],
-        "review_of": a.review_of or "", "feedback": "",
+        "review_of": a.review_of or "", "feedback": "", "exec": {},
         "status_since": now(), "runs": [],
     }
     task["blocks"].append(block)
@@ -429,6 +461,22 @@ def cmd_set(a):
         block["feedback"] = a.note
     if block and a.status == "done" and a.artifact:
         block.setdefault("artifacts", []).extend(a.artifact)
+    # 「谁在做」跟着状态自动走：claimed/running/review 记下动手的那个（owner 只是认领人）；
+    # 收工（done/cancelled）或退回（pending）就清掉线程登记 —— 谁做过的历史留在 runs 里。
+    if a.status in ("claimed", "running", "review"):
+        ex = dict(target.get("exec") or {})
+        by = a.by or ex.get("by") or target.get("owner") or a.actor
+        if ex.get("by") and ex.get("by") != by:      # 换人了：旧线程不再代表这一块
+            ex = {}
+        ex["by"] = by
+        ex["started"] = ex.get("started") or (a.at or now())
+        ex.setdefault("profile", "default")
+        target["exec"] = ex
+    elif target.get("exec"):
+        prev = (target.get("exec") or {}).get("by") or "?"
+        target["exec"] = {}
+        log_event(plan, "exec", f"{target['id']}: 线程登记已清除（@{prev} 收工）",
+                  actor=a.actor, ref=target["id"])
     log_event(plan, "status", f"{target['id']}: {old} → {a.status}"
               + ("（doc 已更新）" if (block and a.doc) else "")
               + ("（done_when 已更新）" if (block and a.done_when) else "")
@@ -475,6 +523,173 @@ def cmd_rm(a):
     print(f"✓ 已删除任务 {task['id']}（含 {n} 个块）")
 
 
+# ---------------------------------------------------------------- 谁在做 + 子代理线程
+
+THREAD_VERDICT = [
+    ("finished", "⚠ 线程已结束"),
+    ("wrong", "❌ 号记错"),
+    ("quiet", "⏳ 静默"),
+    ("stale", "➖ 已无意义"),
+    ("unreachable", "❓ 看不到"),
+    ("absent", "➖ 无线程"),
+    ("ok", "✅ 在动"),
+]
+
+
+def fmt_age(minutes: float) -> str:
+    if minutes < 1:
+        return f"{int(minutes * 60)}s"
+    if minutes < 90:
+        return f"{minutes:.0f}m"
+    if minutes < 60 * 48:
+        return f"{minutes / 60:.1f}h"
+    return f"{minutes / 1440:.1f}d"
+
+
+def probe_thread(ex: dict, stale_min: float):
+    """看一眼这条子代理线程现在什么样 —— 只用文件（转录 + manifest），不读任何库。
+
+    返回 (verdict, 证据行, 详情行)；verdict 见 THREAD_VERDICT。
+    四值不是三值：❓「看不到」与 ❌「号记错」分开 —— 前者可能是线程在别的机器上、
+    或已过 7 天保留期，把它读成「子代理没在跑」就是伪造结论。
+    """
+    tp = (ex.get("transcript") or "").strip()
+    deleg, idx = ex.get("delegation") or "", ex.get("task_index") or 0
+    if not tp and not deleg:
+        who = (ex.get("by") or "").strip()
+        if who:
+            return "absent", f"只登记了在做 @{who}，没有子代理线程（人在做 / 还没派给子代理）", []
+        return "absent", "块在途，但执行者与线程都没登记（谁在做？）", []
+    p = Path(tp or transcript_path(ex.get("profile") or "", deleg, idx))
+    if not p.exists():
+        if p.parent.exists():
+            sibs = sorted(x.name for x in p.parent.glob("task-*.log"))
+            return "wrong", f"这个 delegation 目录在，但没有它的转录（目录里是 {sibs or '空'}）", [str(p)]
+        return "unreachable", "看不到这条线程（已过 7 天保留期 / 在别的机器上 / 号记错）", [str(p)]
+    age_min = (dt.datetime.now().timestamp() - p.stat().st_mtime) / 60.0
+    last = ""
+    try:
+        with p.open("r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.strip():
+                    last = line.rstrip("\n")
+    except OSError as exc:
+        return "unreachable", f"转录读不了（{exc}）", [str(p)]
+    st, exit_reason = "running", ""
+    mp = p.parent / "manifest.json"
+    if mp.exists():
+        try:
+            man = json.loads(mp.read_text(encoding="utf-8-sig"))
+            for t in man.get("tasks") or []:
+                if t.get("index") == idx or (t.get("log") or "") == tp:
+                    st = t.get("status") or "running"
+                    exit_reason = t.get("exit_reason") or ""
+                    break
+        except Exception:
+            st = "running"          # manifest 坏了不算线程结束，别把读不了读成「已死」
+    if st != "running":
+        how = st if st == exit_reason or not exit_reason else f"{st}/{exit_reason}"
+        return "finished", (f"manifest 说这条线程已经 {how}，块还挂在这里 —— "
+                            f"该对账：改状态或重派"), [str(p)]
+    if age_min >= stale_min:
+        return "quiet", f"静默 {fmt_age(age_min)}（≥{stale_min:g} 分钟没写一行）—— 可能卡住或已死", [str(p)]
+    ev = f"转录 {fmt_age(age_min)} 前还写过"
+    ev += f"，末行 {last[:110]}" if last else "（还只有表头）"
+    return "ok", ev, [str(p)]
+
+
+def cmd_exec(a):
+    """登记「谁在做 + 那条子代理线程」——认领(owner)之外的第二个身份。"""
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    target = block or task
+    if a.unset:
+        old = target.get("exec") or {}
+        target["exec"] = {}
+        log_event(plan, "exec", f"{target['id']}: 线程登记已清除"
+                  + (f"（原在做 {old.get('by')}）" if old.get("by") else "")
+                  + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=target["id"])
+        commit(a.slug, plan, a)
+        print(f"✓ {target['id']} 已清线程登记")
+        return
+    if not a.by:
+        die("exec 要说清谁在做：--by <参与方 id>（要清掉登记用 --unset）")
+    if a.task_index is not None and not a.delegation:
+        die("--task-index 只在给了 --delegation 时有意义（一个 delegation 下有多个 task-N）")
+    profile = (a.profile or "").strip()
+    deleg = (a.delegation or "").strip()
+    idx = a.task_index if a.task_index is not None else 0
+    tp = a.transcript or (str(transcript_path(profile, deleg, idx)) if deleg else "")
+    ex = {"by": a.by, "started": a.at or now(), "profile": profile or "default"}
+    if deleg:
+        ex["delegation"], ex["task_index"] = deleg, idx
+    if tp:
+        ex["transcript"] = tp
+    if a.note:
+        ex["note"] = a.note
+    target["exec"] = ex
+    log_event(plan, "exec", f"{target['id']}: 在做 @{a.by}"
+              + (f" · 线程 {deleg}#{idx}" if deleg else "")
+              + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=target["id"])
+    commit(a.slug, plan, a)
+    print(f"✓ {target['id']} 在做 @{a.by}" + (f" · 线程 {deleg}#{idx}" if deleg else ""))
+    if tp and not Path(tp).exists():
+        print(f"⚠ 转录现在不在这台机器上：{tp}"
+              f"（还没建 / 在别的机器 / 号记错 —— 跑 `workers` 会一直这么报）")
+
+
+def cmd_workers(a):
+    """逐个看一眼：在途的那些块，登记的子代理线程是不是真的在动。"""
+    plan = load(a.slug)
+    rows = []
+    for t, b in all_blocks(plan):
+        e = block_effective(plan, b, t)
+        ex = b.get("exec") or {}
+        if not ex.get("by") and e not in ACTIVE:
+            continue
+        if ex.get("by") and e not in ACTIVE:
+            v, ev, det = "stale", (f"块现在是「{STATUS_ZH.get(e, e)}」不在途，却还挂着线程登记"
+                                   f"（要么把状态改对，要么 `exec … --unset` 清掉）"), []
+        else:
+            v, ev, det = probe_thread(ex, a.stale_min)
+        cby, cat = claim_of(b)
+        rows.append({"block": b["id"], "title": b["title"], "status": e, "owner": b.get("owner") or "",
+                     "claimed_by": cby, "claimed_at": cat, "exec": ex, "verdict": v,
+                     "evidence": ev, "transcript": (det[0] if det else "")})
+    order = {k: i for i, (k, _) in enumerate(THREAD_VERDICT)}
+    rows.sort(key=lambda r: (order.get(r["verdict"], 9), r["block"]))
+    counts = {}
+    for r in rows:
+        counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
+    hard = counts.get("finished", 0) + counts.get("wrong", 0)
+    if a.json:
+        print(json.dumps({"plan": plan["slug"], "checked": len(rows), "counts": counts,
+                          "exit": 1 if hard else 0, "blocks": rows}, ensure_ascii=False, indent=2))
+        return 1 if hard else 0
+    print(f"plan: {plan['title']}  ({plan['slug']})")
+    print(f"看 {len(rows)} 个块 · " + (" · ".join(
+        f"{zh} {counts.get(k, 0)}" for k, zh in THREAD_VERDICT if counts.get(k)) or "（没有要看的块）"))
+    if not rows:
+        print("  没有在途块，也没有线程登记 —— 没什么可查的。")
+        return 0
+    for r in rows:
+        zh = dict(THREAD_VERDICT)[r["verdict"]]
+        print(f"\n[{r['status']}] {r['block']}  {r['title']}")
+        claim = f"认领 @{r['claimed_by']}" + (f"（{r['claimed_at'][:16].replace('T', ' ')}）"
+                                             if r["claimed_at"] else "")
+        if not r["claimed_by"]:
+            claim = f"认领 @{r['owner'] or '未指派'}"
+        print(f"    {claim} · 在做 @{r['exec'].get('by') or '未登记'}")
+        print(f"    线程 {r['exec'].get('delegation') or '—'}"
+              f"{'#' + str(r['exec'].get('task_index') or 0) if r['exec'].get('delegation') else ''}"
+              f"  {zh}：{r['evidence']}")
+        if r["transcript"]:
+            print(f"      {r['transcript']}")
+    if hard:
+        print(f"\n退出码 1：{hard} 个块的线程已经结束或记错了 —— 先对账（改状态 / 重派 / 修线程号），再往下走。")
+    return 1 if hard else 0
+
+
 def cmd_expand(a):
     """把一个块（B）展开成一个任务（T）：原块成为第一步，--step 依次追加后续步骤。
 
@@ -519,7 +734,7 @@ def cmd_expand(a):
     for i, (t_, d_, c_, k_) in enumerate(steps, start=2):
         nb = {"id": f"{tid}#B-{i:03d}", "title": t_, "kind": k_, "status": "pending",
               "owner": owner, "doc": d_, "done_when": c_, "artifacts": [],
-              "deps": [chain[-1]["id"]], "review_of": "", "feedback": "",
+              "deps": [chain[-1]["id"]], "review_of": "", "feedback": "", "exec": {},
               "status_since": now(), "runs": []}
         new_task["blocks"].append(nb)
         chain.append(nb)
@@ -665,6 +880,10 @@ def cmd_collapse(a):
         arts += [x for x in (b.get("artifacts") or []) if x not in arts]
     runs = sorted([dict(r, block=b["id"]) for b in live for r in (b.get("runs") or [])],
                   key=lambda r: r.get("at") or "")
+    exe = {}
+    for b in live:                                  # 压成一块后「谁在做」取最后一次登记的那个
+        if (b.get("exec") or {}).get("by"):
+            exe = dict(b["exec"])
     folded = [{"id": b["id"], "title": b["title"], "kind": b.get("kind"), "status": b["status"],
                "doc": b.get("doc") or "", "done_when": list(b.get("done_when") or [])}
               for b in task["blocks"]]
@@ -674,7 +893,7 @@ def cmd_collapse(a):
               "doc": doc, "done_when": crit, "artifacts": arts, "deps": ext,
               "review_of": (rviews.pop() if len(rviews) == 1 else ""),
               "feedback": (live[0].get("feedback") or "") if len(live) == 1 else "",
-              "status_since": now(), "runs": runs, "folded_from": folded}
+              "status_since": now(), "runs": runs, "folded_from": folded, "exec": exe}
 
     if a.dry_run:
         print(f"[dry-run] {task['id']}「{task['title']}」（{len(live)} 块）→ 1 块 {mid}「{merged['title']}」")
@@ -774,11 +993,12 @@ def cmd_current(a):
     for t, b in all_blocks(plan):
         e = block_effective(plan, b, t)
         if e in {"ready", "claimed", "running", "review", "blocked"}:
-            rows.append((e, t["id"], b["id"], b["title"], b.get("owner", "")))
+            rows.append((e, t["id"], b["id"], b["title"], b.get("owner", ""), b.get("exec") or {}))
     order = {"blocked": 0, "review": 1, "running": 2, "claimed": 3, "ready": 4}
     rows.sort(key=lambda r: (order.get(r[0], 9), r[2]))
-    for e, tid, bid, title, owner in rows:
-        print(f"[{e:<8}] {bid}  {title}  @{owner or '未指派'}")
+    for e, tid, bid, title, owner, ex in rows:
+        print(f"[{e:<8}] {bid}  {title}  @{owner or '未指派'}"
+              + exec_brief({"exec": ex}))
 
 
 def cmd_check(a):
@@ -900,7 +1120,7 @@ def render_md(plan: dict) -> str:
         out.append("- （没有在途工作）")
     for e, b, t in rows:
         out.append(f"- `{b['id']}` **{b['title']}** — {STATUS_ZH.get(e, e)} · "
-                   f"@{b.get('owner') or '未指派'}"
+                   f"@{b.get('owner') or '未指派'}" + exec_brief(b)
                    + (f" · ⚠ {b['feedback']}" if b.get("feedback") else ""))
     out += ["", "## 图", "", mermaid(plan), "", "## 任务", ""]
     for t in plan["tasks"]:
@@ -925,6 +1145,17 @@ def render_md(plan: dict) -> str:
                 out.append(f"    - 依赖：{d}" + ("" if d in deps_of(b) else "（任务级）"))
             for art in b.get("artifacts") or []:
                 out.append(f"    - 产物：`{art}`")
+            cby, cat = claim_of(b)
+            if cby:
+                out.append(f"    - 认领：@{cby}（{cat[:16].replace('T', ' ')}）")
+            ex = b.get("exec") or {}
+            if ex.get("by"):
+                line = f"    - 在做：@{ex['by']}"
+                if ex.get("delegation"):
+                    line += f" · 线程 {ex['delegation']}#{ex.get('task_index') or 0}"
+                if ex.get("transcript"):
+                    line += f" · `{ex['transcript']}`"
+                out.append(line)
             if b.get("feedback"):
                 out.append(f"    - 评审意见：{b['feedback']}")
             for r in (b.get("runs") or [])[-3:]:
@@ -987,7 +1218,8 @@ def render_canvas(plan: dict) -> str:
                 "color": {"done": "4", "running": "5", "review": "6", "ready": "3",
                           "blocked": "1", "waiting": "0"}.get(block_effective(plan, b, t), "0"),
                 "text": f"### {b['id']}\n{b['title']}\n\n`{block_effective(plan, b, t)}` · "
-                        f"@{b.get('owner') or '-'}\n\n{(b.get('doc') or '')[:160]}"})
+                        f"@{b.get('owner') or '-'}" + exec_brief(b) + "\n\n"
+                        + (b.get('doc') or '')[:160]})
     for t, b in all_blocks(plan):
         for dep in edge_deps(plan, t, b):
             if dep in col:
@@ -1041,7 +1273,7 @@ def cmd_digest(a):
             lines.append(f"🔔 **@{who} 现在该动**：")
             for t, b in mine[:3]:
                 e = block_effective(plan, b, t)
-                lines.append(f"  · `{b['id']}` {b['title']}（{e}）"
+                lines.append(f"  · `{b['id']}` {b['title']}（{e}）" + exec_brief(b)
                              + (f" · ⚠{b['feedback']}" if b.get("feedback") else ""))
         else:
             lines.append(f"🔔 @{who} 名下暂时没有可动的块。")
@@ -1058,7 +1290,7 @@ def cmd_digest(a):
             for e, b in rows[:8]:
                 tag = "⚠ 待批准" if e == "blocked" else STATUS_ZH.get(e, e)
                 lines.append(f"  · `{b['id']}` {b['title']} — {tag} @{b.get('owner') or '未指派'}"
-                             + (f" · ⚠{b['feedback']}" if b.get("feedback") else ""))
+                             + exec_brief(b) + (f" · ⚠{b['feedback']}" if b.get("feedback") else ""))
         else:
             lines.append("▶ 没有在途工作。")
     blocked = [b for _, b in all_blocks(plan) if block_effective(plan, b, owner_of(plan, b)) == "blocked"]
@@ -1129,6 +1361,24 @@ def main(argv=None):
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_set)
 
+    p = sub.add_parser("exec", aliases=["doing"],
+                       help="登记谁在做 + 那条子代理线程（认领之外的第二个身份）")
+    p.add_argument("slug")
+    p.add_argument("ref", help="块或任务：T-002#B-001 / B-001 / T-002")
+    p.add_argument("--by", default="", help="谁在做（参与方 id：agent 名或人）")
+    p.add_argument("--delegation", default="", help="子代理线程号 deleg_xxxxxxxx")
+    p.add_argument("--task-index", dest="task_index", type=int, default=None,
+                   help="这条线程下第几个 task（默认 0）")
+    p.add_argument("--profile", default="",
+                   help="这条线程属于哪个 profile（默认 default）—— 用来算转录路径")
+    p.add_argument("--transcript", default="",
+                   help="转录文件绝对路径；不给就按 --profile + 线程号算")
+    p.add_argument("--note", default="", help="在做的是哪一段（会记进日志）")
+    p.add_argument("--at", default="", help="补记时间（ISO8601），默认现在")
+    p.add_argument("--unset", action="store_true", help="清掉线程登记（线程结束 / 交回别人）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_exec)
+
     p = sub.add_parser("rm", help="真删一个块或任务（取消 ≠ 删除；被引用时默认拒删）")
     p.add_argument("slug")
     p.add_argument("ref")
@@ -1198,6 +1448,14 @@ def main(argv=None):
     p = sub.add_parser("current", help="现在可动的块")
     p.add_argument("slug")
     p.set_defaults(f=cmd_current)
+
+    p = sub.add_parser("workers", aliases=["threads"],
+                       help="检查每个在途块登记的子代理线程是否还在动（已结束/记错 ⇒ exit 1）")
+    p.add_argument("slug")
+    p.add_argument("--stale-min", dest="stale_min", type=float, default=30,
+                   help="转录多久没写一行就算静默（默认 30 分钟）")
+    p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
+    p.set_defaults(f=cmd_workers)
 
     p = sub.add_parser("list", help="列出所有 plan")
     p.set_defaults(f=cmd_list)
