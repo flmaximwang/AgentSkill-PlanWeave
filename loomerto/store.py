@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from .model import PlanError, now
@@ -138,7 +139,12 @@ def save(slug: str, plan: dict) -> None:
 
 
 def commit(slug: str, plan: dict, a=None) -> None:
-    """落盘 + 同步刷新三个视图，保证 html/canvas/md 永不落后于 plan.json。"""
+    """落盘 + 同步刷新三个视图，保证 html/canvas/md 永不落后于 plan.json。
+
+    顺手换一个 `rev`（版本号）：写回方靠它认「我读的是哪一版」。**不能用 `updated_at` 当版本号** ——
+    秒级时间戳在同一秒里的两次写入会撞成同一个值（画布上连着改两下就会漏掉冲突）。
+    """
+    plan["rev"] = uuid.uuid4().hex[:12]
     save(slug, plan)
     if a is not None and getattr(a, "no_render", False):
         return

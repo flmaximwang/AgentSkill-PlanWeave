@@ -1,4 +1,5 @@
-"""CLI 层：argparse + 16 个子命令（+4 个别名）+ 人读输出 —— 唯一允许 print 与决定退出码的地方。
+"""CLI 层：argparse + 17 个子命令（`plan new` / `task new` 是分组，另 4 个别名）+ 人读输出 ——
+唯一允许 print 与决定退出码的地方。
 
 别的 harness 想用这套能力，要么调这个模块的 `main()`，要么直接 import 模型 / 存储层。
 """
@@ -16,6 +17,7 @@ from .render import *         # noqa: F401,F403
 from .workers import *        # noqa: F401,F403
 
 from . import store as _store          # 要改 PLAN_FILE（包级状态），不能只拿值
+from . import edits                    # 改动的唯一实现：命令层与画布服务共用
 
 
 def die(msg: str, code: int = 2, quiet: bool = False) -> NoReturn:
@@ -65,86 +67,28 @@ def add_participant(plan: dict, spec: str):
 
 def cmd_task(a):
     plan = load(a.slug)
-    ids = [t["id"] for t in plan["tasks"]]
-    tid = a.id or next_ids(plan, "T-", ids)
-    if tid in ids:
-        die(f"任务 {tid} 已存在")
-    plan["tasks"].append({
-        "id": tid, "title": a.title, "owner": a.owner or "", "status": "pending",
-        "deps": a.deps or [], "blocks": [], "note": a.note or "", "exec": {},
-    })
-    log_event(plan, "task", f"新增任务 {tid}「{a.title}」", actor=a.actor, ref=tid)
+    t = edits.add_task(plan, a.title, id=a.id or "", owner=a.owner or "",
+                       deps=a.deps or [], note=a.note or "", actor=a.actor)
     commit(a.slug, plan, a)
-    print(f"✓ {tid} {a.title}")
+    print(f"✓ {t['id']} {t['title']}")
 
 def cmd_block(a):
     plan = load(a.slug)
-    task, _ = find(plan, a.task)
-    if task is None:
-        die(f"{a.task} 是任务不是块")
-    bids = [b["id"] for b in task["blocks"]]
-    bid = f"{task['id']}#" + next_ids(plan, "B-", [b.split('#')[1] for b in bids])
-    block = {
-        "id": bid, "title": a.title, "kind": a.kind,
-        "status": getattr(a, "status", None) or "blocked",
-        "owner": a.owner or task.get("owner", ""), "doc": a.doc or "",
-        "done_when": a.done_when or [], "artifacts": [], "deps": a.deps or [],
-        "review_of": a.review_of or "", "feedback": "", "exec": {},
-        "status_since": now(), "runs": [],
-    }
-    task["blocks"].append(block)
-    log_event(plan, "block", f"新增块 {bid}「{a.title}」", actor=a.actor, ref=bid)
+    _t, block = edits.add_block(plan, a.task, title=a.title, kind=a.kind, doc=a.doc or "",
+                                done_when=a.done_when or [], deps=a.deps or [],
+                                owner=a.owner or "", review_of=a.review_of or "",
+                                status=getattr(a, "status", None) or "blocked",
+                                actor=a.actor)
     commit(a.slug, plan, a)
-    print(f"✓ {bid} {a.title} ({a.kind})")
+    print(f"✓ {block['id']} {block['title']} ({block['kind']})")
 
 
 # ------------------------------------------------ 状态与身份
 def cmd_set(a):
     plan = load(a.slug)
-    task, block = find(plan, a.ref)
-    target = block or task
-    if block:
-        if a.status not in BLOCK_STATUS:
-            die(f"block 状态只能是 {BLOCK_STATUS}")
-    elif a.status not in ("pending", "running", "done", "blocked", "cancelled"):
-        die("task 状态只能是 pending/running/done/blocked/cancelled")
-    old = target["status"]
-    target["status"] = a.status
-    target["status_since"] = a.at or now()
-    if a.owner:
-        target["owner"] = a.owner
-    if block and a.doc:
-        target["doc"] = a.doc
-    if block and a.done_when:
-        target["done_when"] = a.done_when
-    if block and a.status in ("claimed", "running", "review", "done", "blocked"):
-        block.setdefault("runs", []).append({
-            "at": a.at or now(), "by": a.by or target.get("owner") or a.actor,
-            "from": old, "to": a.status, "note": a.note or ""})
-    # 评审打回 = 从 review 走出去、且不是 done：块回到原 owner 手上（claimed），原因记进 feedback
-    if block and old == "review" and a.status != "done" and a.note:
-        block["feedback"] = a.note
-    if block and a.status == "done" and a.artifact:
-        block.setdefault("artifacts", []).extend(a.artifact)
-    # 「谁在做」跟着状态自动走：claimed/running/review 记下动手的那个（owner 只是认领人）；
-    # 收工（done/cancelled）或退回（pending）就清掉线程登记 —— 谁做过的历史留在 runs 里。
-    if a.status in ("claimed", "running", "review"):
-        ex = dict(target.get("exec") or {})
-        by = a.by or ex.get("by") or target.get("owner") or a.actor
-        if ex.get("by") and ex.get("by") != by:      # 换人了：旧线程不再代表这一块
-            ex = {}
-        ex["by"] = by
-        ex["started"] = ex.get("started") or (a.at or now())
-        target["exec"] = ex
-    elif target.get("exec"):
-        prev = (target.get("exec") or {}).get("by") or "?"
-        target["exec"] = {}
-        log_event(plan, "exec", f"{target['id']}: 线程登记已清除（@{prev} 收工）",
-                  actor=a.actor, ref=target["id"])
-    log_event(plan, "status", f"{target['id']}: {old} → {a.status}"
-              + ("（doc 已更新）" if (block and a.doc) else "")
-              + ("（done_when 已更新）" if (block and a.done_when) else "")
-              + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=target["id"])
+    target, old = edits.set_status(plan, a.ref, a.status, by=a.by, owner=a.owner,
+                                   note=a.note, at=a.at, doc=a.doc, done_when=a.done_when,
+                                   artifacts=a.artifact, actor=a.actor)
     commit(a.slug, plan, a)
     print(f"✓ {target['id']} {old} → {a.status}")
 
@@ -791,7 +735,9 @@ def _parser() -> argparse.ArgumentParser:
                     help="一份 plan 库的目录（等价于 $LOOMERTO_PLANS_ROOT）—— 库里有多份 plan、要按 slug 选时才用")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("new", help="新建 plan")
+    # —— plan 组：一份 plan 本身
+    g = sub.add_parser("plan", help="plan 本身的操作（new…）").add_subparsers(dest="sub", required=True)
+    p = g.add_parser("new", help="新建一份 plan")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("--title")
     p.add_argument("--goal")
@@ -801,7 +747,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p.set_defaults(f=cmd_new)
 
-    p = sub.add_parser("task", help="加任务（节点）")
+    # —— task 组：任务（泳道）
+    g = sub.add_parser("task", help="任务（泳道）的操作（new…）").add_subparsers(dest="sub", required=True)
+    p = g.add_parser("new", help="加一条任务（泳道）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("--title", required=True)
     p.add_argument("--id")
@@ -950,7 +898,21 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list", help="列出所有 plan")
     p.set_defaults(f=cmd_list)
 
+    p = sub.add_parser("open", help="把一份 plan 当**可编辑的画布**打开（本地服务，只绑 127.0.0.1）")
+    p.add_argument("target", nargs="?", default="",
+                   help="plan 数据文件（也可以给目录）；给了 --plans-root 时这里可以写 slug")
+    p.add_argument("--port", type=int, default=0, help="端口（默认 0 = 自动挑一个空闲的）")
+    p.add_argument("--no-open", dest="no_open", action="store_true", help="不要自动打开浏览器")
+    p.set_defaults(f=cmd_open)
+
     return ap
+
+
+def cmd_open(a):
+    """把一份 plan 当**可编辑的画布**打开：起一个只绑 127.0.0.1 的本地服务，改一下写回 json。"""
+    load(a.slug)                 # 先读一遍：数据文件不在就当场报错，别等浏览器弹出来才发现
+    from . import serve          # 再 import：平时不跑服务的人不必付 http.server 的代价
+    return serve.run(a.slug, port=a.port, open_browser=not a.no_open)
 
 
 def _slug_of_data_file() -> str:
@@ -962,6 +924,12 @@ def _slug_of_data_file() -> str:
         return p.parent.name
 
 
+def _cmd_name(a) -> str:
+    """命令的完整写法（`plan new` / `set`），出错提示里用。"""
+    sub = getattr(a, "sub", "") or ""
+    return f"{a.cmd} {sub}" if sub else a.cmd
+
+
 def _apply_file_mode(a) -> int:
     """单文件模式（`--plan <数据文件>`，或当前目录正好有 plan.json）：把 slug 那一位让出来。
 
@@ -970,41 +938,51 @@ def _apply_file_mode(a) -> int:
     `loomerto --plan ./plan.json set T-001#B-002 done`。返回非 0 表示已经报错，当退出码用。
     """
     dests = list(getattr(a, "shift", []) or [])
+    slug = getattr(a, "slug", "")          # `open` 这类命令没有 slug 位（它的位置参数是 target）
     if dests:
         if getattr(a, dests[-1], None) not in (None, ""):
             print(f"文件模式（--plan）下不要再写 slug —— 位置参数整体左移一位，例：\n"
-                  f"  loomerto --plan <plan 数据文件> {a.cmd} "
+                  f"  loomerto --plan <plan 数据文件> {_cmd_name(a)} "
                   + " ".join(f"<{d}>" for d in dests), file=sys.stderr)
             return 2
-        vals = [getattr(a, "slug", "")] + [getattr(a, d) for d in dests]
+        vals = [slug] + [getattr(a, d) for d in dests]
         for d, v in zip(dests, vals):
             setattr(a, d, v)
-        a.slug = ""
+        slug = ""
         missing = [d for d in dests if getattr(a, d) in (None, "")]
         if missing:
-            print(f"{a.cmd} 要 " + " ".join(f"<{d}>" for d in dests)
+            print(f"{_cmd_name(a)} 要 " + " ".join(f"<{d}>" for d in dests)
                   + "（文件模式下不用写 slug）", file=sys.stderr)
             return 2
     real = _slug_of_data_file()
-    if a.slug and a.cmd != "new" and a.slug != real:
-        print(f"--plan 指的是 '{real}'，命令里却还写着 slug '{a.slug}' —— "
+    new_plan = (a.cmd == "plan" and (getattr(a, "sub", "") or "") == "new")
+    if slug and not new_plan and slug != real:
+        print(f"--plan 指的是 '{real}'，命令里却还写着 slug '{slug}' —— "
               f"文件模式下不要再写 slug", file=sys.stderr)
         return 2
-    if not a.slug:
-        a.slug = real
+    a.slug = slug or real
     return 0
 
 
 def main(argv=None):
     """任何 harness 的入口：返回退出码（0/1/2），自己不 sys.exit。"""
     a = _parser().parse_args(argv)
-    # 定位这份 plan：`--plan` 直接钉死那一份数据文件；`--plans-root` 给一份 plan 库的目录
-    if getattr(a, "plan_file", ""):
+    # 定位这一份 plan：`--plans-root` 给库；`--plan` 钉死那一份数据文件；
+    # `open` 的位置参数两条路都认（带 / 或 .json 结尾 = 路径，否则在库模式下当 slug）
+    if getattr(a, "plans_root", ""):
+        os.environ["LOOMERTO_PLANS_ROOT"] = a.plans_root
+    tgt = (getattr(a, "target", "") or "").strip() if a.cmd == "open" else ""
+    if tgt and not ("/" in tgt or tgt.endswith(".json")) and plans_root() is not None:
+        a.slug = tgt
+        tgt = ""
+    if tgt:
+        _store.PLAN_FILE = str(Path(tgt).expanduser())
+        if getattr(a, "plan_file", ""):
+            print("⚠ open 的位置参数与 --plan 都给了 —— 按位置参数算", file=sys.stderr)
+    elif getattr(a, "plan_file", ""):
         _store.PLAN_FILE = str(Path(a.plan_file).expanduser())
         if getattr(a, "plans_root", ""):
             print("⚠ 同时给了 --plan 与 --plans-root —— 按 --plan 算", file=sys.stderr)
-    if getattr(a, "plans_root", ""):
-        os.environ["LOOMERTO_PLANS_ROOT"] = a.plans_root
     try:
         if a.cmd == "list":
             return cmd_list(a) or 0
