@@ -10,22 +10,61 @@
 
 from __future__ import annotations
 
-from .model import (BLOCK_STATUS, KINDS, PlanError, find, log_event, next_ids, now)
+from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find,
+                    guard_acyclic, log_event, next_block_id, next_ids, now)
 
 TASK_STATUS = ["pending", "running", "done", "blocked", "cancelled"]
 
 FIELD_ZH = {"title": "标题", "doc": "做什么", "kind": "类型", "owner": "认领人"}
 
+# 「改状态」时每种状态收哪些旗标 —— `set` 一个入口同时管「状态」与「身份（谁在做 + 线程）」，
+# 参数按状态限制：不是这个状态的语义就别在这个状态上给（给了 ⇒ 退 2 并列出该状态收什么）。
+_THREAD = {"--by", "--delegation", "--task-index", "--transcript"}
+_DOC = {"--owner", "--note", "--at", "--doc", "--done-when"}
+BLOCK_SET_FLAGS = {
+    "pending":   _DOC,
+    "claimed":   _DOC | _THREAD,
+    "running":   _DOC | _THREAD,
+    "review":    _DOC | _THREAD,
+    "done":      _DOC | {"--by", "--artifact"},
+    "blocked":   _DOC | {"--by"},
+    "cancelled": _DOC,
+}
+TASK_SET_FLAGS = {
+    "pending":   {"--owner", "--note", "--at"},
+    "running":   {"--owner", "--note", "--at"} | _THREAD,
+    "done":      {"--owner", "--note", "--at"},
+    "blocked":   {"--owner", "--note", "--at"},
+    "cancelled": {"--owner", "--note", "--at"},
+}
+
+
+def check_set_flags(status: str, given, *, is_block: bool) -> None:
+    """按状态卡参数：这个状态不收的旗标 ⇒ PlanError（并把该状态收什么列出来）。"""
+    table = BLOCK_SET_FLAGS if is_block else TASK_SET_FLAGS
+    if status not in table:        # 状态本身就不合法：留给 set_status 报（这里不抢它的话说）
+        return
+    bad = sorted(set(given) - table[status])
+    if bad:
+        raise PlanError(
+            f"{'块' if is_block else '任务'}状态 {status} 不收 {'、'.join(bad)} —— "
+            f"它收 {'、'.join(sorted(table[status]))}"
+            + ("" if is_block else "（任务的线程登记只在 running 时记）"))
+
 
 def set_status(plan: dict, ref: str, status: str, *, by: str = "", owner: str = "",
                note: str = "", at: str = "", doc: str = "", done_when=None,
-               artifacts=(), actor: str = "agent"):
-    """改状态（顺带改 owner / doc / done_when、收产物）。返回 `(target, old)`。
+               artifacts=(), delegation: str = "", task_index=None, transcript: str = "",
+               actor: str = "agent"):
+    """改状态（顺带改 owner / doc / done_when、收产物、登记谁在做 + 那条子代理线程）。
 
+    返回 `(target, old)`。
     语义（与 SKILL.md 的状态表一一对应）：
     - `claimed` / `running` / `review` 记「谁在做」（`exec.by`）；换人时旧线程登记被清掉。
     - `done` / `cancelled` / `pending` 清掉线程登记 —— 谁做过的历史留在 `runs` 里。
     - 从 `review` 走出去、且不是 `done` ⇒ 打回：回到原 owner 手上，`note` 落进 `feedback`。
+    - `--delegation` / `--transcript` 只在在途状态（claimed/running/review）收；
+      `--artifact` 只在 done 收 —— 表见 `BLOCK_SET_FLAGS` / `TASK_SET_FLAGS`。
     """
     task, block = find(plan, ref)
     target = block or task
@@ -34,6 +73,21 @@ def set_status(plan: dict, ref: str, status: str, *, by: str = "", owner: str = 
             raise PlanError(f"block 状态只能是 {BLOCK_STATUS}")
     elif status not in TASK_STATUS:
         raise PlanError("task 状态只能是 " + "/".join(TASK_STATUS))
+    given = set()
+    for flag, val in (("--by", by), ("--owner", owner), ("--note", note), ("--at", at),
+                      ("--delegation", delegation), ("--transcript", transcript)):
+        if val:
+            given.add(flag)
+    if task_index is not None:
+        given.add("--task-index")
+    if artifacts:
+        given.add("--artifact")
+    if block is not None:
+        if doc:
+            given.add("--doc")
+        if done_when:
+            given.add("--done-when")
+    check_set_flags(status, given, is_block=block is not None)
     ts = at or now()
     old = target["status"]
     target["status"] = status
@@ -65,6 +119,20 @@ def set_status(plan: dict, ref: str, status: str, *, by: str = "", owner: str = 
         target["exec"] = {}
         log_event(plan, "exec", f"{target['id']}: 线程登记已清除（@{prev} 收工）",
                   actor=actor, ref=target["id"])
+    if delegation or transcript:       # 在途状态才收（上面的状态闸已经卡过）
+        ex = dict(target.get("exec") or {})
+        if delegation:
+            ex["delegation"], ex["task_index"] = delegation, task_index or 0
+        if transcript:
+            ex["transcript"] = transcript
+        if note:
+            ex["note"] = note
+        target["exec"] = ex
+        log_event(plan, "exec", f"{target['id']}: 登记线程 {delegation or '（未记线程号）'}"
+                  + (f"#{ex.get('task_index') or 0}" if delegation else "")
+                  + (f" @{ex.get('by')}" if ex.get("by") else "")
+                  + (f" · 转录 {transcript}" if transcript else "（没有转录）")
+                  + (f"（{note}）" if note else ""), actor=actor, ref=target["id"])
     log_event(plan, "status", f"{target['id']}: {old} → {status}"
               + ("（doc 已更新）" if (block and doc) else "")
               + ("（done_when 已更新）" if (block and done_when) else "")
@@ -139,6 +207,103 @@ def add_block(plan: dict, task_ref: str, *, title: str, kind: str = "impl", doc:
     task["blocks"].append(block)
     log_event(plan, "block", f"新增块 {bid}「{title}」", actor=actor, ref=bid)
     return task, block
+
+
+def clear_exec(plan: dict, ref: str, *, note: str = "", actor: str = "agent"):
+    """清掉「谁在做 + 线程」的登记（状态不动）。返回 `(target, 原登记)`。
+
+    用在：线程已结束 / 交回别人 / 记错了 —— 不清的话 `workers` 会一直报「不在途却挂着登记」。
+    """
+    task, block = find(plan, ref)
+    target = block or task
+    old = dict(target.get("exec") or {})
+    target["exec"] = {}
+    log_event(plan, "exec", f"{target['id']}: 线程登记已清除"
+              + (f"（原在做 {old.get('by')}）" if old.get("by") else "（本来就没有）")
+              + (f"（{note}）" if note else ""), actor=actor, ref=target["id"])
+    return target, old
+
+
+def assign_block(plan: dict, ref: str, who: str, *, note: str = "", actor: str = "agent"):
+    """把一个块指派给某个参与方（`owner`）；`who=""` 表示清掉指派。返回 `(block, 原认领人)`。
+
+    与 `set --owner` 的分工：assign 只管「这块归谁」，不改状态；改状态的同时换人走 `set --owner`。
+    """
+    _task, block = find(plan, ref)
+    if block is None:
+        raise PlanError(f"{ref} 是任务不是块 —— assign 只对块有用（任务级的认领在 `task new --owner`）")
+    old = block.get("owner") or ""
+    who = (who or "").strip()
+    if old == who:
+        return block, old
+    block["owner"] = who
+    log_event(plan, "assign",
+              (f"{block['id']} 指派给 {who}" if who else f"{block['id']} 清掉指派")
+              + (f"（原 {old}）" if old else "")
+              + (f"（{note}）" if note else ""), actor=actor, ref=block["id"])
+    return block, old
+
+
+def insert_block(plan: dict, anchor_ref: str, *, before: bool = True, title: str,
+                 kind: str = "impl", doc: str = "", done_when=(), owner: str = "",
+                 review_of: str = "", status: str = "blocked", note: str = "",
+                 actor: str = "agent"):
+    """把一个新块插到某个块之前/之后（块**位置**级插入），并把前后接线一次改对。
+
+    - `before=True`（默认）：新块接手锚块原来等的东西（锚块的显式 deps + 它的 review_of），
+      锚块改成只等新块。锚块的下游不用动 —— 顺序仍是 `… → 新块 → 锚块 → 下游`。
+    - `before=False`：新块等锚块；原来等锚块（或评审锚块）的改成等新块 ——
+      `… → 锚块 → 新块 → 下游`（不这么改的话下游会在新块还没做完时就开跑）。
+
+    「两节点之间」= 插到后一个块之前；「最早节点之前」= 插到该任务的第一个块之前。
+    返回 `(task, 新块, 改过接线的块 id 列表, 落点说明)`；只改 dict，落盘由调用方 commit。
+    """
+    task, anchor = find(plan, anchor_ref)
+    if anchor is None:
+        raise PlanError(f"{anchor_ref} 是任务不是块 —— insert 作用于块（T-001#B-002 或 B-002）；"
+                        f"要往任务末尾加块用 `block new --task {task['id']}`")
+    if not (title or "").strip():
+        raise PlanError("块要有标题")
+    if kind not in KINDS:
+        raise PlanError(f"块类型只能是 {KINDS}")
+    if status not in BLOCK_STATUS:
+        raise PlanError(f"block 状态只能是 {BLOCK_STATUS}")
+    idx = task["blocks"].index(anchor)
+    bid = next_block_id(plan, task)
+    inherited = []
+    if before:
+        inherited = list(deps_of(anchor))
+        if anchor.get("review_of"):
+            inherited.append(anchor["review_of"])
+    nb = {"id": bid, "title": title, "kind": kind, "status": status,
+          "owner": owner or anchor.get("owner") or task.get("owner", ""),
+          "doc": doc or "", "done_when": list(done_when or []), "artifacts": [],
+          "deps": [anchor["id"]] if not before else inherited,
+          "review_of": review_of or "", "feedback": "", "exec": {},
+          "status_since": now(), "runs": []}
+    where = (f"插在 {anchor['id']}「{anchor['title']}」{'之前' if before else '之后'}"
+             f"（{task['id']} 第 {idx + (0 if before else 1) + 1} 位）")
+    rewired = []
+    if before:
+        anchor["deps"] = [bid]
+        task["blocks"].insert(idx, nb)
+    else:
+        task["blocks"].insert(idx + 1, nb)
+        aid = anchor["id"]
+        for _t, b in all_blocks(plan):
+            if b["id"] == bid:
+                continue
+            if aid in deps_of(b):
+                b["deps"] = [bid if d == aid else d for d in b["deps"]]
+                rewired.append(b["id"])
+            if b.get("review_of") == aid:
+                b["review_of"] = bid
+                if b["id"] not in rewired:
+                    rewired.append(b["id"])
+    guard_acyclic(plan, f"把 {bid} 插到 {anchor_ref} {'之前' if before else '之后'}")
+    log_event(plan, "insert", f"插入块 {bid}「{title}」{where}"
+              + (f"（{note}）" if note else ""), actor=actor, ref=bid)
+    return task, nb, rewired, where
 
 
 def reorder_blocks(plan: dict, task_ref: str, order):
