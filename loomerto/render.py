@@ -169,8 +169,20 @@ def render_canvas(plan: dict) -> str:
                               "label": "", "color": "6"})
     return json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False, indent=1)
 
+def theme_css(template: Path) -> str:
+    """**共用主题**（plan.html 与 canvas.html 都注入它）：与模板同目录的 `theme.css`。
+
+    颜色 / 字体 / 状态胶囊 / 按钮 / 分隔线 / 进度条只有这一份来源 —— 两页因此不会各长一套观感。
+    模板被 `$LOOMERTO_TEMPLATE` 指到别处、同目录没有 theme.css 时，退回包自带的那一份。
+    """
+    local = Path(template).with_name("theme.css")
+    if local.is_file():
+        return local.read_text(encoding="utf-8")
+    return (Path(__file__).resolve().parent / "assets" / "theme.css").read_text(encoding="utf-8")
+
+
 def render_html(plan: dict, template: Path) -> str:
     """模板路径由 store 传进来：视图层不碰路径常量，免得两层互相 import。"""
     tpl = Path(template).read_text(encoding="utf-8")
     data = json.dumps(plan, ensure_ascii=False).replace("</", "<\\/")
-    return tpl.replace("/*__PLAN_DATA__*/null", data)
+    return tpl.replace("/*__PLAN_DATA__*/null", data).replace("/*__THEME__*/", theme_css(template))

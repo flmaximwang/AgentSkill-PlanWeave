@@ -5,39 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PLAN</title>
 <style>
-  :root{
-    --bg:#f7f8fa; --panel:#fff; --ink:#1f2328; --dim:#6b7280; --line:#e3e6ea;
-    /* 详情栏宽度：默认随窗口伸缩，拖动分隔线后由 JS 写成固定 px（见 syncDetailW） */
-    --detail-w:clamp(280px,26vw,420px);
-    --done:#2f9e44; --running:#1c7ed6; --claimed:#0c8599; --review:#7048e8;
-    --ready:#f08c00; --waiting:#98a2b3; --blocked:#e03131;
-    /* 已取消与「等前置」同色，靠虚线/空心区分（用户 2026-10-06 定） */
-    --cancelled:#98a2b3;
-    --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
-  }
-  @media (prefers-color-scheme: dark){
-    :root{ --bg:#14161a; --panel:#1c1f24; --ink:#e6e8eb; --dim:#9aa4b2; --line:#2b3038;
-           --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35); }
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-       font:14px/1.55 -apple-system,"SF Pro SC","PingFang SC","Helvetica Neue",Segoe UI,sans-serif}
+  /*__THEME__*/
+  /* ↓ 下面只放这一页的**布局**规则：颜色 / 字体 / 状态胶囊(.pill) / 按钮(.btn) / 分隔线(#splitter) /
+     进度条(.track) / 图例(.legend) 都来自上面的共用主题 theme.css —— 改样式去改那里，两个页面一起变。 */
+  :root{ --detail-w:clamp(280px,26vw,420px); }   /* 详情栏宽度：拖动分隔线后由 JS 写成固定 px */
   header{padding:20px 24px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
-  h1{margin:0 0 4px;font-size:20px;letter-spacing:.2px}
-  .goal{margin:0;color:var(--dim);max-width:70ch}
-  .meta{margin-top:10px;display:flex;flex-wrap:wrap;gap:16px;color:var(--dim);font-size:12.5px}
-  .meta code{background:var(--bg);padding:2px 6px;border-radius:5px;border:1px solid var(--line)}
-  .track{margin-top:12px;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
-  .track > i{display:block;height:100%;background:linear-gradient(90deg,#1c7ed6,#2f9e44);
-             border-radius:99px;transition:width .4s}
   .wrap{display:block}
   section.card{margin:16px 24px;background:var(--panel);border:1px solid var(--line);
                border-radius:12px;box-shadow:var(--shadow)}
   section.card > h2{margin:0;padding:12px 16px;font-size:13px;letter-spacing:.08em;
                     text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line)}
   .nodes{padding:16px}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;
-        font-size:12px;font-weight:600;color:#fff}
   .nowlist{display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px}
   .nowcard{border:1px solid var(--line);border-radius:10px;padding:9px 12px;min-width:220px;
            background:var(--bg);cursor:pointer;transition:border-color .12s,transform .12s}
@@ -75,10 +53,7 @@
   #detailbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
              padding:6px 8px 6px 12px;border-bottom:1px solid var(--line);background:var(--bg);
              user-select:none}
-  #splitter{position:fixed;top:0;bottom:0;right:var(--detail-w);width:9px;z-index:61;cursor:col-resize}
-  #splitter::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--line)}
-  #splitter:hover::after,#splitter.dragging::after,#splitter:focus-visible::after{
-            left:3px;width:3px;background:var(--running)}
+  #splitter{right:var(--detail-w)}     /* 其余（宽度/细线/hover）在共用主题里 */
   #detailbar b{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
   #detailbar button{border:1px solid var(--line);background:var(--panel);color:var(--dim);
                     border-radius:6px;padding:2px 9px;font-size:11.5px;line-height:1.6;cursor:pointer;
@@ -97,13 +72,10 @@
     overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5;
     white-space:pre;color:var(--ink)}
   #detail .run{border-left:2px solid var(--line);padding:2px 0 2px 8px;margin:6px 0;color:var(--dim);font-size:12px}
-  .legend{display:flex;flex-wrap:wrap;gap:12px;padding:10px 16px;color:var(--dim);font-size:12px}
-  .legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
   .journal{padding:6px 16px 16px;font-size:12.5px;max-height:280px;overflow:auto}
   .journal div{padding:3px 0;border-bottom:1px dashed var(--line);color:var(--dim)}
   .journal b{color:var(--ink);font-weight:600}
   .toolbar{padding:8px 16px;display:flex;gap:14px;align-items:center;color:var(--dim);font-size:12px}
-  a{color:var(--running)}
 </style>
 </head>
 <body>
@@ -152,13 +124,15 @@ const PLAN = /*__PLAN_DATA__*/null;
 function boom(where, e){
   const el = document.getElementById('graph') || document.body;
   el.insertAdjacentHTML('afterbegin',
-    `<pre style="color:#e03131;white-space:pre-wrap;padding:8px">渲染失败 @${where}: ${e && (e.stack||e.message||e)}</pre>`);
+    `<pre style="color:var(--blocked);white-space:pre-wrap;padding:8px">渲染失败 @${where}: ${e && (e.stack||e.message||e)}</pre>`);
   console.error(where, e);
 }
 const view = (name, fn) => { try { fn(); } catch (e) { boom(name, e); } };
 // 图例顺序 = 一个块要走的流程：待批准(要人点头) → 等前置 → 待认领 → 已认领 → 进行中 → 待评审 → 已完成，旁支（已取消）放最后
-const C = {blocked:'#e03131',waiting:'#98a2b3',ready:'#f08c00',claimed:'#0c8599',
-           running:'#1c7ed6',review:'#7048e8',done:'#2f9e44',cancelled:'#98a2b3'};
+/* 状态色**只从共用主题取**（theme.css 里的 --blocked / --running / …）：
+   这里再写一遍十六进制，两个页面迟早各长一套颜色。键序 = 图例顺序 = 一个块的一生。 */
+const C = {blocked:'var(--blocked)',waiting:'var(--waiting)',ready:'var(--ready)',claimed:'var(--claimed)',
+           running:'var(--running)',review:'var(--review)',done:'var(--done)',cancelled:'var(--cancelled)'};
 const ZH = {blocked:'待批准',done:'已完成',running:'进行中',claimed:'已认领',
             review:'待评审',ready:'待认领',waiting:'等前置',pending:'待排',
             cancelled:'已取消'};

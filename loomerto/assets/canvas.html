@@ -5,94 +5,97 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>loomerto 画布</title>
 <style>
-  :root{
-    --bg:#f6f7f9; --panel:#fff; --line:#e2e5ea; --ink:#1f2328; --dim:#6b7280;
-    --done:#2e7d32; --review:#c98a00; --running:#1565c0; --claimed:#6a1b9a;
-    --ready:#00838f; --waiting:#9aa0a6; --pending:#9aa0a6; --blocked:#c62828;
-    --cancelled:#8d9199; --editw:390px;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;
-       display:flex;flex-direction:column;height:100vh;overflow:hidden}
-  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);
-         border-bottom:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  header h1{font-size:15px;margin:0}
-  header .goal{color:var(--dim);font-size:12px;max-width:38ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  header .spacer{flex:1}
-  header .meta{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
-  button{font:inherit;padding:4px 10px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer}
-  button:hover{border-color:#b9c0c9;background:#fafbfc}
-  button.primary{background:#1565c0;border-color:#1565c0;color:#fff}
-  button.primary:hover{background:#12559f}
-  button.ghost{border-style:dashed;color:var(--dim)}
-  #msg{font-size:12px;min-width:8ch}
-  #msg.err{color:var(--bad,#c62828)} #msg.ok{color:var(--done)}
-  main{flex:1;display:flex;min-height:0;padding-right:var(--editw);position:relative}
-  #board{flex:1;overflow:auto;padding:14px 16px 60px;position:relative}
-  .lane{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;padding:8px 12px 12px}
+  /*__THEME__*/
+  /* ↓ 只放这一页的**布局**规则：颜色 / 字体 / 状态胶囊(.pill) / 按钮(.btn) / 分隔线(#splitter) /
+     进度条(.track) / 图例(.legend) 全来自上面的共用主题 theme.css（与只读看板 plan.html 同一份）。 */
+  :root{ --detail-w:390px; }        /* 详情栏宽度：拖动分隔线后由 JS 写成固定 px */
+  html,body{height:100%}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden;padding-right:var(--detail-w)}
+  header{padding:20px 24px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .meta .spacer{margin-left:auto}
+  #msg{font-size:12px;min-width:6ch}
+  #msg.err{color:var(--blocked)} #msg.ok{color:var(--done)}
+  main{flex:1;display:flex;min-height:0;position:relative}
+  #board{flex:1;overflow:auto;padding:16px 24px 60px;position:relative}
+  #splitter{right:var(--detail-w)}     /* 其余（宽度/细线/hover）在共用主题里 */
+  .fullbtn{display:block;width:100%;margin:2px 0 8px;padding:10px;border:1px dashed var(--line);
+           border-radius:12px;background:transparent;color:var(--dim);text-align:center;
+           font:inherit;font-size:13px;cursor:pointer}
+  .fullbtn:hover{border-color:var(--dim);background:var(--panel);color:var(--ink)}
+  .lane{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        box-shadow:var(--shadow);margin:0 0 12px;padding:10px 14px 12px}
   .lanehead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 0 8px}
   .lanehead .tid{font-weight:600;font-variant-numeric:tabular-nums}
   .lanehead .deps{color:var(--dim);font-size:12px}
-  .lanehead .spacer{flex:1}
   .cards{display:flex;gap:10px;flex-wrap:wrap;min-height:34px}
-  .cards.over{outline:2px dashed #1565c0;outline-offset:4px;border-radius:8px}
-  .card{width:196px;border:1px solid var(--line);border-left:5px solid var(--waiting);border-radius:8px;
-        background:#fff;padding:7px 9px 8px;cursor:pointer;position:relative}
-  .card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .card.sel{border-color:#1565c0;box-shadow:0 0 0 2px rgba(21,101,192,.25)}
+  .cards.over{outline:2px dashed var(--running);outline-offset:4px;border-radius:8px}
+  .card{width:200px;border:1px solid var(--line);border-left:4px solid var(--waiting);border-radius:10px;
+        background:var(--panel);box-shadow:var(--shadow);padding:8px 10px;cursor:pointer;
+        transition:transform .12s}
+  .card:hover{transform:translateY(-2px)}
+  .card.sel{outline:2px solid var(--running)}
   .card.drag{opacity:.45}
-  .card .cid{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
-  .card .ctitle{font-size:13px;margin:2px 0 5px;word-break:break-word}
-  .card .cmeta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim)}
-  .badge{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;color:#fff;background:var(--waiting)}
-  .badge.done{background:var(--done)} .badge.review{background:var(--review)}
-  .badge.running{background:var(--running)} .badge.claimed{background:var(--claimed)}
-  .badge.ready{background:var(--ready)} .badge.waiting{background:var(--waiting)}
-  .badge.pending{background:var(--pending)} .badge.blocked{background:var(--blocked)}
-  .badge.cancelled{background:var(--cancelled)}
-  .card.st-done{border-left-color:var(--done)} .card.st-review{border-left-color:var(--review)}
-  .card.st-running{border-left-color:var(--running)} .card.st-claimed{border-left-color:var(--claimed)}
-  .card.st-ready{border-left-color:var(--ready)} .card.st-waiting{border-left-color:var(--waiting)}
-  .card.st-pending{border-left-color:var(--pending)} .card.st-blocked{border-left-color:var(--blocked)}
-  .card.st-cancelled{border-left-color:var(--cancelled);opacity:.6}
+  .card .cid{font-size:11px;color:var(--dim);font-family:var(--mono);
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .ctitle{font-size:13px;font-weight:600;margin:3px 0 5px;line-height:1.3;
+                display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card .cmeta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--dim)}
+  .card.st-done{border-left-color:var(--done);opacity:.6}
+  .card.st-review{border-left-color:var(--review)}
+  .card.st-running{border-left-color:var(--running)}
+  .card.st-claimed{border-left-color:var(--claimed)}
+  .card.st-ready{border-left-color:var(--ready)}
+  .card.st-waiting,.card.st-pending{border-left-color:var(--waiting)}
+  .card.st-blocked{border-left-color:var(--blocked)}
+  .card.st-cancelled{border-left-color:var(--cancelled);border-left-style:dashed;opacity:.6}
   #edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-  #edges path{fill:none;stroke:#b6bdc7;stroke-width:1.5;marker-end:url(#arw)}
-  aside{position:fixed;top:0;right:0;bottom:0;width:var(--editw);background:var(--panel);border-left:1px solid var(--line);
-        padding:12px 14px 24px;overflow:auto}
-  aside h2{font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
-  aside .hint{color:var(--dim);font-size:12px}
+  #edges path{fill:none;stroke:var(--line);stroke-width:1.5;marker-end:url(#arw)}
+  /* 详情栏 = 只读看板里的 #detailpanel：常驻右侧、占满整页高、同一条分隔线调宽 */
+  aside#editor{position:fixed;right:0;top:0;bottom:0;width:var(--detail-w);z-index:60;
+               display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);
+               box-shadow:-10px 0 30px rgba(16,24,40,.10);overflow:hidden}
+  #editbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
+           padding:6px 8px 6px 12px;border-bottom:1px solid var(--line);background:var(--bg);user-select:none}
+  #editbar b{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+  #editbody{padding:14px 16px;font-size:13px;overflow:auto;flex:1 1 auto;min-height:0}
+  #editbody h2{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   label{display:block;font-size:12px;color:var(--dim);margin:9px 0 3px}
-  input,textarea,select{width:100%;font:inherit;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  input,textarea,select{width:100%;font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);
+                        border-radius:6px;background:var(--panel);color:var(--ink)}
   textarea{min-height:56px;resize:vertical}
   .row{display:flex;gap:8px}
-  .row>*{flex:1}
+  .row>*{flex:1;min-width:0}
   .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-  .kv{font-size:12px;color:var(--dim);margin-top:10px}
-  .kv code{color:var(--ink)}
-  ul.runs{margin:4px 0 0;padding-left:16px;font-size:12px;color:var(--dim)}
-  .legend{color:var(--dim);font-size:12px;padding:0 0 8px}
+  ul.runs{margin:4px 0 0;padding:0 0 0 18px;font-size:12px;color:var(--dim)}
 </style>
 </head>
 <body>
 <header>
-  <h1 id="title">…</h1>
-  <span class="goal" id="goal"></span>
-  <span class="spacer"></span>
-  <span class="meta" id="progress"></span>
-  <span class="meta" id="rev"></span>
-  <span id="msg"></span>
-  <button id="refresh" title="重新从数据文件读一遍">刷新</button>
-  <button id="addtask" class="primary">＋ 任务</button>
+  <h1 id="title">—</h1>
+  <p class="goal" id="goal"></p>
+  <div class="meta">
+    <span id="progress"></span>
+    <span id="rev"></span>
+    <span id="msg"></span>
+    <span class="spacer"></span>
+    <button id="refresh" class="btn" title="重新从数据文件读一遍">刷新</button>
+    <button id="addtask" class="btn primary">＋ 任务</button>
+  </div>
+  <div class="track"><i id="fill" style="width:0"></i></div>
 </header>
 
 <main>
   <div id="board">
     <div class="legend" id="legend"></div>
     <div id="lanes"></div>
-    <svg id="edges"><defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b6bdc7"/></marker></defs></svg>
+    <button id="addtask2" class="fullbtn" title="在最后加一条泳道">＋ 任务</button>
+    <svg id="edges"><defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/></marker></defs></svg>
   </div>
-  <aside id="editor"></aside>
+  <div id="splitter" title="拖动调节详情栏宽度（双击复位）"></div>
+  <aside id="editor">
+    <div id="editbar"><b>详情</b><button id="clear" class="btn" title="只清内容，边栏常驻不动（Esc）">清空</button></div>
+    <div id="editbody"></div>
+  </aside>
 </main>
 
 <script>
@@ -105,6 +108,8 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ZH = {done:"已完成",running:"进行中",claimed:"已认领",review:"待评审",ready:"待认领",
             waiting:"等前置",pending:"待排",blocked:"待批准",cancelled:"已取消"};
+// 图例顺序 = 一个块的一生（与只读看板 plan.html 同一份约定）；颜色一律走共用主题的 CSS 变量
+const LEGEND = ["blocked","waiting","ready","claimed","running","review","done","cancelled"];
 const zh = (s) => ZH[s] || s;
 const blockOf = (id) => { for (const t of (VIEW?.tasks||[])) for (const b of t.blocks) if (b.id === id) return [t,b]; return [null,null]; };
 
@@ -132,10 +137,15 @@ function render(){
   const v = VIEW;
   $("#title").textContent = v.title || v.slug;
   $("#goal").textContent = v.goal || "";
-  $("#progress").textContent = `${v.progress[0]}/${v.progress[1]} 块`;
-  $("#rev").textContent = "rev " + (v.rev || "").replace("T", " ").slice(0, 16);
-  $("#legend").textContent = "颜色 / 状态：" + v.block_statuses.map(s => zh(s)).join(" · ")
-                             + "　（拖动卡片 = 改这条泳道里的先后；跨泳道移动暂不支持）";
+  const [done, tot] = v.progress;
+  $("#progress").textContent = `${done}/${tot} 块`;
+  $("#fill").style.width = (tot ? Math.round(100 * done / tot) : 0) + "%";
+  $("#rev").textContent = "rev " + (v.rev || "").slice(0, 12);
+  $("#legend").innerHTML = LEGEND.map(s =>
+      s === "cancelled"
+        ? `<span><i class="zebra"></i>${esc(zh(s))}</span>`
+        : `<span><i style="background:var(--${s})"></i>${esc(zh(s))}</span>`).join("")
+    + `<span style="opacity:.85">拖动卡片 = 改这条泳道里的先后；跨泳道移动暂不支持</span>`;
   const lanes = $("#lanes");
   lanes.innerHTML = "";
   for (const t of v.tasks){
@@ -143,10 +153,10 @@ function render(){
     sec.className = "lane"; sec.dataset.task = t.id;
     sec.innerHTML =
       `<div class="lanehead"><span class="tid">${esc(t.id)}</span><b>${esc(t.title)}</b>
-         <span class="badge ${esc(t.status)}">${esc(zh(t.status))}</span>
+         <span class="pill ${esc(t.status)}">${esc(zh(t.status))}</span>
          <span class="deps">${t.owner ? "@"+esc(t.owner) : "未指派"}${t.deps.length ? " · 前置 "+t.deps.map(esc).join("、") : ""}</span>
-         <span class="spacer"></span>
-         <button class="addblock ghost" data-task="${esc(t.id)}">＋ 块</button></div>
+         <span style="margin-left:auto"></span>
+         <button class="addblock btn ghost" data-task="${esc(t.id)}">＋ 块</button></div>
        <div class="cards"></div>`;
     const cards = sec.querySelector(".cards");
     for (const b of t.blocks) cards.appendChild(cardEl(b));
@@ -167,7 +177,7 @@ function cardEl(b){
   el.innerHTML =
     `<div class="cid">${esc(b.id.split("#")[1])}${b.kind ? " · " + esc(b.kind) : ""}${b.rework ? " ⟲"+b.rework : ""}</div>
      <div class="ctitle">${esc(b.title)}</div>
-     <div class="cmeta"><span class="badge ${b.status}">${esc(zh(b.status))}</span>
+     <div class="cmeta"><span class="pill ${b.status}">${esc(zh(b.status))}</span>
        ${b.owner ? `<span>@${esc(b.owner)}</span>` : ""}${ex ? `<span>${ex}</span>` : ""}</div>`;
   el.addEventListener("click", () => { SEL = (SEL === b.id ? null : b.id); render(); });
   return el;
@@ -179,16 +189,25 @@ function drawEdges(){
   const pos = {};
   document.querySelectorAll(".card").forEach(c => {
     const r = c.getBoundingClientRect();
-    pos[c.dataset.id] = {l:r.left-bb.left+board.scrollLeft, r:r.right-bb.left+board.scrollLeft, y:r.top-bb.top+board.scrollTop+r.height/2};
+    const l = r.left - bb.left + board.scrollLeft, rr = r.right - bb.left + board.scrollLeft;
+    const t = r.top - bb.top + board.scrollTop, btm = r.bottom - bb.top + board.scrollTop;
+    pos[c.dataset.id] = {l, r: rr, t, btm, cx: (l + rr) / 2, y: t + r.height / 2};
   });
   const paths = [];
   for (const [from,to] of (VIEW.edges||[])){
     if (!pos[from] || !pos[to]) continue;
     const a = pos[from], b = pos[to];
-    const mid = (a.r + b.l) / 2;
-    paths.push(`<path d="M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}"/>`);
+    if (b.t >= a.btm - 4){
+      // 目标在下面（正常的前向依赖）：从下边缘竖直出去、落到目标上边缘 —— 走线不绕圈
+      const d = Math.max(16, (b.t - a.btm) / 2);
+      paths.push(`<path d="M${a.cx} ${a.btm} C${a.cx} ${a.btm + d} ${b.cx} ${b.t - d} ${b.cx} ${b.t}"/>`);
+    } else {
+      // 同一行或回边：右缘 → 左缘
+      const mid = (a.r + b.l) / 2;
+      paths.push(`<path d="M${a.r} ${a.y} C${mid} ${a.y} ${mid} ${b.y} ${b.l} ${b.y}"/>`);
+    }
   }
-  svg.innerHTML = `<defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b6bdc7"/></marker></defs>` + paths.join("");
+  svg.innerHTML = `<defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/></marker></defs>` + paths.join("");
   svg.style.height = board.scrollHeight + "px";
 }
 window.addEventListener("resize", () => drawEdges());
@@ -243,11 +262,11 @@ function select(id, options, cur, zhMap){
 }
 
 function editor(){
-  const box = $("#editor");
+  const box = $("#editbody");
   if (NEWFORM){ box.innerHTML = NEWFORM.html; wireNewForm(); return; }
   const [t,b] = SEL ? blockOf(SEL) : [null,null];
   if (!b){
-    box.innerHTML = `<h2>画布</h2><p class="hint">点一个块来编辑；拖卡片改同泳道内的先后。</p>
+    box.innerHTML = `<h2>画布</h2><p class="goal">点一个块来编辑；拖卡片改同泳道内的先后。</p>
       <div class="kv">数据文件：<code>${esc(VIEW.file)}</code><br>
       每次保存都会写回这份 json，并同步 PLAN.md / plan.html / plan.canvas。</div>
       <div class="kv">能改：标题 · 做什么 · 判据 · 认领人 · 类型 · 状态（含送审 / 打回 / 收工）· 新建任务与块。<br>
@@ -256,8 +275,8 @@ function editor(){
   }
   const parts = VIEW.participants.map(p => `<option value="${esc(p.id)}">`).join("");
   box.innerHTML = `
-    <h2>${esc(b.id)} <span class="badge ${b.status}">${esc(zh(b.status))}</span></h2>
-    <p class="hint">派生状态由依赖算出：<b>${esc(zh(b.status))}</b>${b.status !== b.raw_status ? `（内部 ${esc(b.raw_status)}，被依赖挡着）` : ""}</p>
+    <h2>${esc(b.id)} <span class="pill ${b.status}">${esc(zh(b.status))}</span></h2>
+    <p class="goal">派生状态由依赖算出：<b>${esc(zh(b.status))}</b>${b.status !== b.raw_status ? `（内部 ${esc(b.raw_status)}，被依赖挡着）` : ""}</p>
     <label for="f_title">标题</label><input id="f_title" value="${esc(b.title)}">
     <label for="f_doc">做什么（doc）</label><textarea id="f_doc">${esc(b.doc)}</textarea>
     <label for="f_done">判据（一行一条）</label><textarea id="f_done">${esc((b.done_when||[]).join("\n"))}</textarea>
@@ -271,9 +290,9 @@ function editor(){
     </div>
     <label for="f_note">说明（改状态的 note；打回时落进 feedback）</label><input id="f_note" value="">
     <div class="btns">
-      <button class="primary" id="save">保存字段</button>
-      <button id="setst">改状态</button>
-      <button id="rework" class="ghost" title="回到「已认领」，note 落进 feedback">打回重做</button>
+      <button class="btn primary" id="save">保存字段</button>
+      <button class="btn" id="setst">改状态</button>
+      <button class="btn ghost" id="rework" title="回到「已认领」，note 落进 feedback">打回重做</button>
     </div>
     <div class="kv">归属 ${esc(t.id)} ${esc(t.title)} · 依赖 ${(b.deps||[]).length ? b.deps.map(esc).join("、") : "—"}
       ${b.review_of ? "<br>评审对象 <code>" + esc(b.review_of) + "</code>" : ""}
@@ -305,8 +324,8 @@ function newBlockForm(taskId){
       <div><label for="n_status">初始状态</label>${select("n_status", ["pending","blocked"], "pending", zh)}</div>
     </div>
     <label for="n_owner">认领人</label><input id="n_owner" list="people">
-    <div class="btns"><button class="primary" id="n_go">新建</button><button id="n_cancel">取消</button></div>
-    <p class="hint">默认「待排」（<code>pending</code>）—— 你就是在画布上批准它的人；要留给人点头就选「待批准」。</p>`};
+    <div class="btns"><button class="btn primary" id="n_go">新建</button><button class="btn" id="n_cancel">取消</button></div>
+    <p class="goal">默认「待排」（<code>pending</code>）—— 你就是在画布上批准它的人；要留给人点头就选「待批准」。</p>`};
   render();
 }
 function newTaskForm(){
@@ -315,7 +334,7 @@ function newTaskForm(){
     <label for="n_title">标题</label><input id="n_title">
     <label for="n_owner">认领人</label><input id="n_owner" list="people">
     <label for="n_deps">前置任务（逗号分隔，可空）</label><input id="n_deps">
-    <div class="btns"><button class="primary" id="n_go">新建</button><button id="n_cancel">取消</button></div>`};
+    <div class="btns"><button class="btn primary" id="n_go">新建</button><button class="btn" id="n_cancel">取消</button></div>`};
   render();
 }
 function wireNewForm(){
@@ -336,10 +355,49 @@ function wireNewForm(){
   });
 }
 
+// ---------------------------------------------------------------- 详情栏宽度（拖动 / 双击复位）
+// 与只读看板 plan.html 同一套：CSS 变量同名 --detail-w，手感同一条 #splitter（样式在共用主题里）
+const DETAILW_DEFAULT = 390, DETAILW_MIN = 280, BOARD_MIN = 340;
+const detailW = () => parseInt(getComputedStyle(document.documentElement).getPropertyValue("--detail-w")) || DETAILW_DEFAULT;
+function setDetailW(w, save){
+  const max = Math.max(DETAILW_MIN, window.innerWidth - BOARD_MIN);
+  w = Math.max(DETAILW_MIN, Math.min(max, Math.round(w)));
+  document.documentElement.style.setProperty("--detail-w", w + "px");
+  if (save) { try { localStorage.setItem("loomerto.canvas.detailw", String(w)); } catch(e) {} }
+  drawEdges();                       // 画布宽度变了，依赖连线要重画
+  return w;
+}
+(function initSplitter(){
+  try {
+    const saved = parseInt(localStorage.getItem("loomerto.canvas.detailw") || "0", 10);
+    if (saved) setDetailW(saved, false);
+  } catch(e) {}
+  const sp = $("#splitter");
+  sp.addEventListener("dblclick", () => setDetailW(DETAILW_DEFAULT, true));
+  sp.addEventListener("mousedown", e => {
+    e.preventDefault();
+    sp.classList.add("dragging"); document.body.classList.add("resizing");
+    const move = ev => setDetailW(window.innerWidth - ev.clientX, false);
+    const up = ev => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      sp.classList.remove("dragging"); document.body.classList.remove("resizing");
+      setDetailW(window.innerWidth - ev.clientX, true);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+  window.addEventListener("resize", () => setDetailW(detailW(), false));   // 窗口变窄时把它夹回来
+})();
+
 // ---------------------------------------------------------------- 启动
 $("#refresh").addEventListener("click", load);
 $("#addtask").addEventListener("click", newTaskForm);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && SEL){ SEL = null; render(); } });
+$("#addtask2").addEventListener("click", newTaskForm);      // 泳道下方那条全宽按钮
+$("#clear").addEventListener("click", () => { SEL = null; NEWFORM = null; render(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape"){ NEWFORM = null; SEL = null; render(); }
+});
 load();
 </script>
 </body>

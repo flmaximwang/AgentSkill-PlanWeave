@@ -16,11 +16,16 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import edits, store
+from . import edits, render, store
 from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, block_deps, block_effective,
                     claim_of, edge_deps, progress, task_status)
 
 ASSET = Path(__file__).resolve().parent / "assets" / "canvas.html"
+
+
+def _theme_css() -> str:
+    """画布页用的**共用主题** —— 与 plan.html 注入的是同一份（见 `render.theme_css`）。"""
+    return render.theme_css(ASSET)
 
 
 def plan_rev(plan: dict) -> str:
@@ -88,7 +93,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.split("?")[0] in ("/", "/index.html"):
             try:
-                self._send(200, ASSET.read_bytes(), "text/html; charset=utf-8")
+                html = ASSET.read_text(encoding="utf-8").replace("/*__THEME__*/", _theme_css())
+                self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
             except OSError as e:
                 self._send(500, {"ok": False, "error": f"读不到画布资产 {ASSET}：{e}"})
             return
