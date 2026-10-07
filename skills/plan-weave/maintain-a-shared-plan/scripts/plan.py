@@ -500,6 +500,8 @@ def cmd_expand(a):
         for i, (t_, d_, c_, k_) in enumerate(steps, start=2):
             print(f"[dry-run]   第 {i} 步 {tid}#B-{i:03d}「{t_}」({k_}) · 判据 {len(c_)} 条")
         print(f"[dry-run] 改等新链尾 {tail} 的块：{users or '（无）'}")
+        if block["status"] in ("done", "cancelled"):
+            print(f"[dry-run] ⚠ 原块是 {block['status']}：新加步骤是 pending ⇒ 等于把这段活重新打开")
         if not src["blocks"]:
             print(f"[dry-run] {src['id']} 会是空的 → 删除，并把指向它的任务级依赖转给 {tid}")
         print("[dry-run] 没写任何文件")
@@ -545,10 +547,16 @@ def cmd_expand(a):
                 t["deps"] = [tid if d == src["id"] else d for d in t["deps"]]
         plan["tasks"].remove(src)
         dropped = f"；原任务 {src['id']} 已空 → 删除，指向它的任务级依赖转给 {tid}"
+    warn = ""
+    if block["status"] in ("done", "cancelled"):
+        warn = (f"⚠ 原块是「{STATUS_ZH.get(block['status'], block['status'])}」：新加的 {len(steps)} 步是 pending，"
+                f"等它的块改等这些新步骤 —— 等于把这段活重新打开（下游会回到「等前置」）。"
+                f"只想补记录就把新步骤也置 done。")
     guard_acyclic(plan, f"把 {xid} 展开成任务 {tid}")
     log_event(plan, "expand",
               f"展开块 {xid} → 任务 {tid}「{title}」"
               f"（{len(chain)} 步：{' → '.join(b['id'] for b in chain)}）"
+              + (f"（原块 {block['status']}、新步骤 pending）" if warn else "")
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=tid)
     commit(a.slug, plan, a)
     print(f"✓ {xid} → {tid}「{title}」（{len(chain)} 步 · owner={owner or '-'}）")
@@ -556,6 +564,8 @@ def cmd_expand(a):
         print(f"    {b['id']}  {b['title']}"
               + (f"  ⟵ 等 {b['deps']}" if b.get("deps") else ""))
     print(f"  改等链尾的块：{rewired or '（无）'}{dropped}")
+    if warn:
+        print(warn)
 
 
 def cmd_collapse(a):
