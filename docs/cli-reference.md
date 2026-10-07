@@ -1,10 +1,10 @@
 # `plan.py` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `3d774bd`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-07 · 代码基线 `09250db`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
-> `for c in new task block set exec rm expand collapse note digest render check current workers list; do loomerto $c --help; done`
+> `for c in new task block set exec rm expand collapse note digest render check current show workers list; do loomerto $c --help; done`
 
 ## 0. 怎么调用
 
@@ -96,6 +96,15 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 
 ### `current` — 现在能动的块（该谁动）
 `py current <slug>` — 按 待批准 → 待评审 → 进行中 → 已认领 → 待认领 排序，带「在做 @谁（线程 …）」。
+
+### `show` — 看一个块 / 一条任务的详细信息（**只读**；`info` 是它的别名）
+`py show <slug> <ref> [--json] [--runs N]`
+- 块视角：状态（+自何时）· 类型 · 归属任务 · 认领人（+认领时刻）· 在做的人（+线程号与转录路径）·
+  做什么 · 判据 · 依赖（含任务级展开）· 评审对象 · 返工 `⟲N` 与 feedback · 产物 · run 记录 · 三视图路径。
+- 任务视角（`ref` 给 `T-002`）：任务状态 / 前置 / 块一览（逐块状态与认领人）。
+- `--json` 给 agent 读（字段名与 `plan.json` 对齐）；`--runs N` 只列最近 N 条 run（默认 5，`0` = 全列）。
+- **什么都不改**：不落盘、不重渲、不写日志。找不到 ref / slug 仍按老约定退 **2**。
+- 要「一批块」看 `current`（现在该谁动）；要看**某个**块的判据/线程选它。
 
 ### `check` — 图质量（有错误退 1）
 `py check <slug> [--stale-hours 24]`

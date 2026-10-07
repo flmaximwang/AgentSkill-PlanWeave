@@ -170,6 +170,7 @@ py exec <slug> T-002#B-001 --by default --delegation deleg_05e3c787 --task-index
         --note "前半段：写脚本"    # 转录路径按 --profile 自动算（默认 default），也可 --transcript 直接给绝对路径
 py exec <slug> T-002#B-001 --unset  # 线程收工 / 交回别人
 py workers <slug>                   # ← 检查：每个在途块登记的线程还在动吗
+py show <slug> T-002#B-001          # ← 一次读全：状态 · 认领人(含认领时刻) · 在做+线程+转录 · 判据 · run（只读）
 ```
 
 - **线程号从哪来**：`delegate_task` 返回的 `delegation_id`（`deleg_xxxxxxxx`）与它在该批次里的
@@ -240,6 +241,7 @@ py collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--forc
                                          # 一个任务 → 一个块（默认回展开前的位置）
 py note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
 py current <slug>                        # 现在该谁动
+py show <slug> <ref> [--json] [--runs N] # 一个块/一条任务的详情（只读；--runs 0 = 全列 run）
 py check <slug>                          # 图质量（有错误 exit 1）
 py digest <slug> [--to <参与方>] [--stale-hours 24]
 py render <slug>                         # 手动刷新三个视图

@@ -3,7 +3,7 @@
 **这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-07 · 代码基线 `7eed38f`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
+> 最后对齐：2026-10-07 · 代码基线 `09250db`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
 ## 0. 文档地图（每个细节去哪看）
@@ -48,18 +48,19 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-06** | 给用户的界面**不一定是 html 文件**：也可以是一个 Python 起的本地 web 服务，能在**多个 plan 之间切换** | `loomerto` 是纯 CLI；`plan.html` 是自包含单文件（能 `file://` 打开）。没有任何服务层，也没有「多 plan 一览/切换」的界面（`list` 只有一行文本） | 待做 |
 | **R-07** | **需求要在 skill repo 里留档**，方便后期对齐；文档要有**单一入口**，入口要**完整指路**到细节文档 | 本文件 + [`docs/cli-reference.md`](docs/cli-reference.md) 就是这次的产物；README 加了「文档地图」指向这里 | 已落地（本次提交） |
 | **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 5 层，包在**仓库根** `loomerto/`：`model` / `store` / `render` / `workers` / `cli`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处；别的程序 `import loomerto` 即可用；skill 侧只留一个薄壳 `scripts/plan.py` | 已落地 |
-| **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：15 个子命令（+3 别名）逐条列参数与退出码 | 已落地 |
+| **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：16 个子命令（+4 别名）逐条列参数与退出码 | 已落地 |
 | **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block` 的 `--status` 默认已改成 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
 | **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（intake 归 `agent-orchestration`），lock 的 identifier/URL 指向 `flmaximwang/Loomerto`、revision `7eed38f`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`，identifier 仍是旧仓库名），待随该 bot 退役一并清 | 已落地 |
+| **R-12** | 「**给一个 cli 入口**」—— 要能按 ref（`T-003#B-004` 这种）查**一个块/一条任务**的详细信息，而不是只给命令清单 | `show` 子命令（别名 `info`）：`py show <slug> <ref> [--json] [--runs N]` —— 块视角给 状态/类型/归属/认领(含时刻)/在做+线程+转录/做什么/判据/依赖/评审/返工 ⟲N/产物/run/三视图路径，任务视角给 状态/前置/块一览；纯只读（不落盘、不重渲、不写日志），找不到 ref 退 2 | 已落地 `09250db` |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
-15 个子命令 + 3 个别名（`doing`=exec、`threads`=workers、`compress`=collapse）：
+16 个子命令 + 4 个别名（`doing`=exec、`threads`=workers、`compress`=collapse、`info`=show）：
 
 - **建**：`new`（plan）｜`task`（任务线）｜`block`（可认领的块，必须有 `doc` + `done_when`）
 - **结构**：`expand`（块→任务流程）｜`collapse`（任务→块）｜`rm`（真删，被引用时默认拒删）
 - **状态与身份**：`set`（改状态，自动记「谁在做」）｜`exec`（谁在做 + 子代理线程）｜`note`（写日志）
-- **看**：`list`｜`current`（现在该谁动）｜`check`（图质量，有错退 1）｜`workers`（线程还在动吗，⚠/❌ 退 1）
+- **看**：`list`｜`current`（现在该谁动）｜`show`（**一个**块/任务的详情，只读）｜`check`（图质量，有错退 1）｜`workers`（线程还在动吗，⚠/❌ 退 1）
 - **出**：`render`（重渲 md/html/canvas）｜`digest`（提醒文本）
 
 退出码约定：参数错 / 找不到对象 → **2**；`check` 有错误 → **1**；`workers` 有 ⚠/❌ → **1**；其余 → 0。
