@@ -52,6 +52,18 @@ done
 > （`git show 06d14b9:skills/<cat>/<name>/<file> | shasum -a 256` 逐个对得上 profile 那份的 sha256），
 > 之后的改写另开提交。
 
+## 盲测（description 路由）
+
+新建 skill / 改 description 头部之后，按 skill `skill-routing-blind-test` 的协议跑一轮：候选只给
+`description` 的前 57 字符，两个独立判官只读同一份判官输入，逐题选「最该被调用的 skill」，对着金标落矩阵。
+
+| 轮次 | 日期 | 范围 | 候选 | 题数 | 判官 | 得分 | 结论 |
+|---|---|---|---|---|---|---|---|
+| r1 | 2026-10-07 | 两个新校验 skill 的正例与变体 + 既有 3 个 skill 的触发题 + 2 条诱饵 | 13 | 16 | A / B | A 16/16 · B 16/16（逐题 picks 完全一致） | 定版，不开第二轮 |
+
+产物在 `blind-tests/r1/`（题面 / 金标 / 判官输入 / 判官 A·B / 得分矩阵 / 轮次说明）；逐题矩阵与
+「接受的代价」（下一轮往窗口塞新钩子时不许挤掉的区分词）在各 skill 的 `test-results.md`。
+
 ## skills/plan-weave/maintain-a-shared-plan
 
 **一份 plan 的全生命周期**。模型借自 PlanWeave：plan → task（节点，可带任务级 `deps`）→

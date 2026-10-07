@@ -114,3 +114,4 @@ python3 "$C" <slug> --plans-root <dir>  # 不在本 profile 的 plans 目录里�
 |---|---|
 | `scripts/check_plan_temp_hygiene.py` | 全部判据：生产证据 / 声明 / 收尾节点 / 建议命令；纯 stdlib，支持 `--json` |
 | `test-prompts.json` | 触发路由的正例与兄弟诱饵（分界：临时文件 vs 命令可执行性 vs 图质量） |
+| `test-results.md` | 路由盲测 r1 的结论与「接受的代价」（判官 A/B 16/16 一致，定版） |

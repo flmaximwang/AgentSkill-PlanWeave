@@ -1,0 +1,19 @@
+轮次 r1 · 候选 13 个 skill · 16 道题 · 判官 A/B 逐题矩阵
+题号  类型               正确答案                     A                          B                          一致?
+P01   should_trigger     check-plan-temp-hygiene      check-plan-temp-hygiene    check-plan-temp-hygiene     ✓
+P02   should_trigger     check-plan-temp-hygiene      check-plan-temp-hygiene    check-plan-temp-hygiene     ✓
+P03   should_trigger     check-plan-temp-hygiene      check-plan-temp-hygiene    check-plan-temp-hygiene     ✓
+P04   should_trigger     check-plan-temp-hygiene      check-plan-temp-hygiene    check-plan-temp-hygiene     ✓
+P05   should_trigger     check-plan-node-commands     check-plan-node-commands   check-plan-node-commands    ✓
+P06   should_trigger     check-plan-node-commands     check-plan-node-commands   check-plan-node-commands    ✓
+P07   should_trigger     check-plan-node-commands     check-plan-node-commands   check-plan-node-commands    ✓
+P08   should_trigger     check-plan-node-commands     check-plan-node-commands   check-plan-node-commands    ✓
+P09   should_trigger     check-plan-temp-hygiene      check-plan-temp-hygiene    check-plan-temp-hygiene     ✓
+P10   should_trigger     check-plan-node-commands     check-plan-node-commands   check-plan-node-commands    ✓
+P11   should_trigger     maintain-a-shared-plan       maintain-a-shared-plan     maintain-a-shared-plan      ✓
+P12   should_trigger     maintain-a-shared-plan       maintain-a-shared-plan     maintain-a-shared-plan      ✓
+P13   should_trigger     remind-collaborators         remind-collaborators       remind-collaborators        ✓
+P14   should_trigger     intake-a-running-collaboration intake-a-running-collaboration intake-a-running-collaboration ✓
+P15   should_not_trigger maintain-a-shared-plan       maintain-a-shared-plan     maintain-a-shared-plan      ✓
+P16   should_not_trigger maintain-a-shared-plan       maintain-a-shared-plan     maintain-a-shared-plan      ✓
+得分：A 16/16 · B 16/16 · 逐题完全一致 16/16 —— 两判官一致 ⇒ 按协议定版，不开第二轮

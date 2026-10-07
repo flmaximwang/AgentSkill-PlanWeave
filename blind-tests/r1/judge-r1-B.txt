@@ -1,0 +1,17 @@
+P01 check-plan-temp-hygiene
+P02 check-plan-temp-hygiene
+P03 check-plan-temp-hygiene
+P04 check-plan-temp-hygiene
+P05 check-plan-node-commands
+P06 check-plan-node-commands
+P07 check-plan-node-commands
+P08 check-plan-node-commands
+P09 check-plan-temp-hygiene
+P10 check-plan-node-commands
+P11 maintain-a-shared-plan
+P12 maintain-a-shared-plan
+P13 remind-collaborators
+P14 intake-a-running-collaboration
+P15 maintain-a-shared-plan
+P16 maintain-a-shared-plan
+DONE

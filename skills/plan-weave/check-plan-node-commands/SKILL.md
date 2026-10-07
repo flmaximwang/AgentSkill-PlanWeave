@@ -120,3 +120,4 @@ lab-migration 是唯一一份「写了命令但没写变量定义」的（98 处
 |---|---|
 | `scripts/check_plan_node_commands.py` | 命令抽取（cmds / 围栏 / 反引号）+ 变量定义四来源 + 逐块判定；纯 stdlib，支持 `--json` |
 | `test-prompts.json` | 触发路由的正例与兄弟诱饵（分界：命令可执行性 vs 临时文件闭环） |
+| `test-results.md` | 路由盲测 r1 的结论与「接受的代价」（判官 A/B 16/16 一致，定版） |
