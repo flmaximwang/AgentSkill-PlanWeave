@@ -1,4 +1,4 @@
-# loomerto（仓库 `AgentSkill-PlanWeave`）
+# loomerto（GitHub 仓库 `flmaximwang/Loomerto`；原名 `AgentSkill-PlanWeave`，旧地址由 GitHub 重定向）
 
 **一个 AI 原生的 python 包 + 随包发布的 skill 集**：跨 harness 的协作工作台 —— 一份 `plan.json` 是唯一真相，
 人和 AI 在同一块画布上对齐（谁认领 / 谁在做 / 那条子代理线程 / 下一步该谁动），下一个接手的人或 agent
@@ -46,7 +46,7 @@ for s in "plan-weave/maintain-a-shared-plan:loomerto" \
          "agent-orchestration/intake-a-running-collaboration:agent-orchestration"; do
   path="${s%%:*}"; cat="${s##*:}"
   hermes skills install \
-    "flmaximwang/AgentSkill-PlanWeave/skills/$path" --category "$cat" -y
+    "flmaximwang/Loomerto/skills/$path" --category "$cat" -y
 done
 ```
 
@@ -56,9 +56,10 @@ done
 
 **本机现状（2026-10-07）：** 包用 `uv tool install --editable <repo>` 装好（`loomerto` / `plan` 在
 `~/.local/bin`）；五条 skill 装在 **default** profile、类目 `loomerto`（intake 那条按仓库路径归
-`agent-orchestration`），lock 的 `source_revision` = `21db8e6`，装好的副本与仓库**逐份 `diff -rq` 一致**。
-`plan-weave` profile 里还留着**旧一代**（类目 `plan-weave`，revision 停在 `c6f071b`/`19724db`）——
-那台记录员 bot 退役时要一起清。
+`agent-orchestration`），lock 的 identifier/URL 已指向 **`flmaximwang/Loomerto`**、`source_revision` =
+`7eed38f`，装好的副本与仓库**逐份 `diff -rq` 一致**。
+`plan-weave` profile 里还留着**旧一代**（类目 `plan-weave`，revision 停在 `c6f071b`/`19724db`，
+identifier 仍是旧仓库名）—— 那台记录员 bot 退役时要一起清。
 
 **skill 里的 `scripts/plan.py` 是薄壳**：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」交给包，
 再按 `checkout → $LOOMERTO_HOME → 已安装的 import → 已装好的 loomerto 命令` 的顺序找包；四条都不成立时，

@@ -1,9 +1,9 @@
-# AgentSkill-PlanWeave · 需求（单一入口）
+# loomerto · 需求（单一入口）
 
-**这份文件是 PlanWeave 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
+**这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-07 · 代码基线 `21db8e6`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
+> 最后对齐：2026-10-07 · 代码基线 `7eed38f`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
 ## 0. 文档地图（每个细节去哪看）
@@ -50,7 +50,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 5 层，包在**仓库根** `loomerto/`：`model` / `store` / `render` / `workers` / `cli`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处；别的程序 `import loomerto` 即可用；skill 侧只留一个薄壳 `scripts/plan.py` | 已落地 |
 | **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：15 个子命令（+3 别名）逐条列参数与退出码 | 已落地 |
 | **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block` 的 `--status` 默认已改成 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
-| **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（intake 归 `agent-orchestration`），lock revision `21db8e6`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`），待随该 bot 退役一并清 | 已落地 |
+| **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（intake 归 `agent-orchestration`），lock 的 identifier/URL 指向 `flmaximwang/Loomerto`、revision `7eed38f`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`，identifier 仍是旧仓库名），待随该 bot 退役一并清 | 已落地 |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 

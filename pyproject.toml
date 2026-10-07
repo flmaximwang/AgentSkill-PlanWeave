@@ -21,8 +21,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/flmaximwang/AgentSkill-PlanWeave"
-Source = "https://github.com/flmaximwang/AgentSkill-PlanWeave"
+Homepage = "https://github.com/flmaximwang/Loomerto"
+Source = "https://github.com/flmaximwang/Loomerto"
 
 [project.scripts]
 loomerto = "loomerto.cli:main"

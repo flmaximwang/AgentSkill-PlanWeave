@@ -15,7 +15,7 @@
 ## 2. 仓库布局
 
 ```
-AgentSkill-PlanWeave/                 ← 仓库根 = python 项目根
+Loomerto/                             ← 仓库根 = python 项目根（GitHub: flmaximwang/Loomerto）
 ├── pyproject.toml                    包元数据 + console scripts（loomerto / plan）+ 包数据
 ├── loomerto/                          ★ python 包（纯 stdlib、零依赖、>=3.9）
 │   ├── __init__.py   __main__.py      `python -m loomerto` 的入口
