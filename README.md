@@ -1,39 +1,40 @@
-# AgentSkill-PlanWeave
+# loomery（仓库 `AgentSkill-PlanWeave`）
 
-Hermes profile `plan-weave`（角色：**协作计划记录员**）的 skill 合集。
+**一个 AI 原生的 python 包 + 随包发布的 skill 集**：跨 harness 的协作工作台 —— 一份 `plan.json` 是唯一真相，
+人和 AI 在同一块画布上对齐（谁认领 / 谁在做 / 那条子代理线程 / 下一步该谁动），下一个接手的人或 agent
+不必去读聊天记录。命令行只是它的一层适配器：任何 harness 都能 import 这个包。
 
-这个 bot 不亲手干活：用户同时和人多、agent 多地推进一件事时，它把「现在到哪了、下一步该谁动」
-固化进**一份** plan 文件，让下一个接手的人或 agent 不必去读聊天记录。所以这套 skill 的题材是
-**状态的单一真相与其分发**（记录 → 派生视图 → 只推该动的那一件事 → 后进来的人怎么用只读证据接上）。
-交付前另有**两条校验**：这份 plan 会不会留下没人清的临时文件（`check-plan-temp-hygiene`）、
-每个节点有没有可直接执行的命令与变量定义（`check-plan-node-commands`）。
-
-**public 仓库**：内容与具体机器无关，可分享。
+- **包**：仓库根目录的 `loomery/`（纯 stdlib、零依赖、`requires-python >= 3.9`）。名字取「织造工场」——
+  多条工作线在这里被织成一块布。
+- **skill**：`skills/` 下的五条（给 Hermes profile `plan-weave` 用，角色是**协作计划记录员**）。
+  skill 不夹带实现，只带一个薄壳（`scripts/plan.py`）去调这个包。
+- **public 仓库**：内容与具体机器无关，可分享。
 
 ## 文档地图（先读哪个）
 
 - **要什么 / 做到哪了 / 缺什么** → [`REQUIREMENTS.md`](REQUIREMENTS.md) —— **需求的唯一入口**，
   它里面有一张完整的文档地图（哪类细节去哪份文件）。需求不散落在各 skill 正文里。
-- **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（15 个子命令逐条，含退出码）。
+- **包怎么分层 / 怎么接新前端（画布写回、web 服务）/ 改代码前的三道闸** → [`docs/architecture.md`](docs/architecture.md)。
+- **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（15 个子命令逐条，含退出码与全局旗标）。
 - **动手改一份 plan** → [`skills/plan-weave/maintain-a-shared-plan/SKILL.md`](skills/plan-weave/maintain-a-shared-plan/SKILL.md)（模型 / 状态表 / 谁在做+线程 / 坑）。
-- 本文件剩下的部分 = 仓库索引：五个 skill 各是什么、怎么装、盲测记录。
+- 本文件剩下的部分 = 仓库索引：五条 skill 各是什么、怎么装、盲测记录。
 
-## 索引
+## 装什么（两条腿）
 
-| skill | 用途 | 可执行入口 |
-|---|---|---|
-| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `scripts/plan.py <command> <slug>` |
-| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `plan.py digest <slug> --to <参与方>` |
-| [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
-| [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
-| [intake-a-running-collaboration](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
+**1）包**（让命令能跑；任何 harness 都能 import 它）：
 
-五个 skill 的类目不统一（四个 `plan-weave`、一个 `agent-orchestration`），因为类目是**安装落点**，
-而 `intake-a-running-collaboration` 与 `agent-orchestration` 类目下的
-`agent-to-agent-handoff` / `agent-handoff-and-review` / `agent-handoff-spec` 是同一套协作程序的两半。
-仓库内路径的第一段与安装类目保持一致，安装后 profile 里的树形与仓库逐字节相同。
+```bash
+uv tool install --editable .    # 推荐：装出 loomery / plan 两个命令（本机 ~/.local/bin），代码跟着 checkout 走
+# 或
+cd <repo> && python3 -m loomery …        # 不装，直接在仓库里跑
+export LOOMERY_HOME=<repo>               # 让别的 python 也能 import loomery（把它加进 sys.path）
+```
 
-装进 Hermes（三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
+plan 目录**不靠猜**：`--plans-root <路径>` → `--profile <名字>`（= `~/.hermes/profiles/<名字>/workspace/plans`）
+→ `$LOOMERY_PLANS_ROOT` / `$LOOMERY_PROFILE` → `~/.hermes/workspace/plans`。例：
+`loomery --profile plan-weave list`。
+
+**2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 
 ```bash
 for s in "plan-weave/maintain-a-shared-plan:plan-weave" \
@@ -50,10 +51,28 @@ done
 `--category` **只在安装时读取**：换分类 = uninstall + 带新 `--category` 重装。skill 目录是 per-profile 的
 （`$HERMES_HOME/profiles/plan-weave/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
 
-**当前状态：** `plan-weave` profile 已按上表类目装好（5 条），hub 安装、有 lock 条目，`source_revision` 随 `main`
-（安装 pin 到当时的 commit，之后 `hermes skills check` / `hermes skills update <name>` 直接可用）。
-**本仓库是这五个 skill 唯一的 source of truth**：改内容改这里，`git push` 后
-`hermes skills update <name>` 取新版。
+**skill 里的 `scripts/plan.py` 是薄壳**：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」交给包，
+再按 `checkout → $LOOMERY_HOME → 已安装的 import → 已装好的 loomery 命令` 的顺序找包；四条都不成立时，
+它会明确告诉你 `uv tool install --editable <repo>`（而不是抛一个看不懂的 ImportError）。
+
+**当前状态：** 包已在本机装好（`uv tool install --editable`，`loomery` / `plan` 在 `~/.local/bin`）；
+`plan-weave` profile 的五条 skill 都是 hub 安装、有 lock 条目，`source_revision` 随 `main`。
+**本仓库是这些 skill 与这个包的唯一 source of truth**：改这里 → `git push` → `hermes skills update <name>` 取新版。
+
+## 索引
+
+| skill | 用途 | 可执行入口 |
+|---|---|---|
+| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomery <command> <slug>`（skill 里另有薄壳 `scripts/plan.py`） |
+| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomery digest <slug> --to <参与方>` |
+| [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
+| [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
+| [intake-a-running-collaboration](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
+
+五条 skill 的类目不统一（四条 `plan-weave`、一条 `agent-orchestration`），因为类目是**安装落点**，
+而 `intake-a-running-collaboration` 与 `agent-orchestration` 类目下的
+`agent-to-agent-handoff` / `agent-handoff-and-review` / `agent-handoff-spec` 是同一套协作程序的两半。
+仓库内路径的第一段与安装类目保持一致，安装后 profile 里的树形与仓库逐字节相同。
 
 > 搬进来之前它们只活在那个 profile 的 `skills/` 目录里（**无 lock 条目** —— 没有仓库、没有更新路径，
 > `check` / `update` / `uninstall` 都看不见它们）。搬迁拆成两个提交：`06d14b9` 是**逐字节原样**的落点
@@ -74,16 +93,16 @@ done
 
 ## skills/plan-weave/maintain-a-shared-plan
 
-**一份 plan 的全生命周期**。模型借自 PlanWeave：plan → task（节点，可带任务级 `deps`）→
-block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 `done_when` 两个字段，没有判据的块不许建）
-→ run（改状态时自动追加的执行记录）。
+**一份 plan 的全生命周期**。模型借自 [GaosCode/PlanWeave](https://github.com/GaosCode/PlanWeave)（那个项目另有其名与本包无关）：
+plan → task（节点，可带任务级 `deps`）→ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与
+`done_when` 两个字段，没有判据的块不许建）→ run（改状态时自动追加的执行记录）。
 
-- **目录**：`<profile>/workspace/plans/<slug>/`，`plan.json` 是唯一真相；`PLAN.md`（人读摘要 + mermaid）、
-  `plan.html`（自包含离线泳道看板）、`plan.canvas`（Obsidian JSON Canvas）三个视图**永远不要手改** ——
-  下一次 `plan.py` 落盘就覆盖。
-- **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/needs_changes/blocked/cancelled`；
+- **目录**：`<plans root>/<slug>/`（plans root 见上面「装什么」；profile 场景 = `<profile>/workspace/plans`），
+  `plan.json` 是唯一真相；`PLAN.md`（人读摘要 + mermaid）、`plan.html`（自包含离线泳道看板）、
+  `plan.canvas`（Obsidian JSON Canvas）三个视图**永远不要手改** —— 下一次落盘就覆盖。
+- **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/blocked/cancelled`；
   `ready` 与 `waiting` 由依赖算出来（依赖全 done ⇒ ready）。写 `ready` 会被拒绝是**故意的** ——
-  两处真相就是这个系统要消灭的东西。
+  两处真相就是这个系统要消灭的东西。**新建块默认 `blocked`（待批准）**，AI 判断无需审批才写 `pending`。
 - **一次协作回合的固定动作**：`current`（先看现在能动的块）→ `note`（总结这一段真正发生了什么，
   拿不准的写「待确认」）→ `set`（只改受影响的块，带 `--by` / `--note`）→ `check`（环 / 悬空依赖 /
   无主就绪块 / 悬置超时，**有错误就别往下走**）→ `exec`（派给子代理时登记线程）→ `workers`
@@ -92,7 +111,7 @@ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 
 - **谁认领了 / 谁在做 / 线程在哪**：一个块上站着两个人 —— `owner`（认领人）与 `exec.by`（此刻动手的那个），
   第三个字段 `exec.delegation` / `transcript` 给出**具体的子代理线程**（`deleg_05e3c787#0` 与它的转录文件）。
   `workers` 七种结论：`✅ 在动` / `⏳ 静默` / `⚠ 线程已结束` / `❌ 号记错` / `❓ 看不到` / `➖ 无线程` /
-  `➖ 已无意义`，只有前两类里的 `⚠` 与 `❌` 退 1。live 转录 7 天回收，`❓ 看不到` 不等于「子代理没在跑」。
+  `➖ 已无意义`，只有 `⚠` 与 `❌` 退 1。live 转录 7 天回收，`❓ 看不到` 不等于「子代理没在跑」。
 - **交付给人的默认包**：`plan.html` 的 `file://` URL **一行**，**不发附件**（用户 2026-10-06 定：
   「我只想要可以直接在浏览器中查看的 URL，不要附件」；`file://` 文本在 Discord 里不可点没关系 ——
   他和你在同一台机器上，粘进地址栏即开）。整条消息压到不被 Discord 拆成 `(1/2)`；机制、字段清单、判据
@@ -102,17 +121,17 @@ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 
   （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `collapse` 压回**一个块**
   （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
   一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
-- **可执行入口** `scripts/plan.py`：纯 stdlib 单文件，`list` / `new` / `task` / `block` / `set` / `note` /
-  `current` / `check` / `digest` / `render` / `expand` / `collapse` 全部命令在 SKILL.md 的速查表里，可直接复制。
+- **实现**在仓库根的 `loomery/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
+  [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 
 ## skills/plan-weave/remind-collaborators
 
 提醒的那一半 —— **这条 skill 里纪律比格式重要**。一条合格的提醒有四个要件，缺一个就是唠叨：
 块 id（`T-004#B-001`，不是「那个配 token 的事」）、plan 文件的绝对路径（这是别的 agent 唯一的入口，
-也是你不在场时唯一还站着的东西）、一条命令就能做的下一步、以及给人时那两行 `plan.html` 的 URL + 附件。
+也是你不在场时唯一还站着的东西）、一条命令就能做的下一步、以及给人时那行 `plan.html` 的 `file://` URL。
 
 - **什么时候推**：块变 ready 且是他的 → 推该块 owner 一次；悬置超时（默认 24h）→ owner + 用户；
-  评审打回 `needs_changes` → 实现者，带 feedback 原文；全 plan 停滞 / 有 blocked 需要决定 → 用户。
+  评审打回 → 实现者，带 feedback 原文；全 plan 停滞 / 有 blocked 需要决定 → 用户。
   定时 digest 默认每 6h，**静默时段（默认 23:00–08:00）不发**。
 - **静默与去重**：一次只推一件事；同一件事不推第二次（除非真的又超时一档）；只在状态真的变了才推，
   没变就一句话「无变化」；别人已经在自己推进（claimed/running 且没过期）时不要插话。
@@ -154,7 +173,7 @@ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与 
 结论四值：`✅ 闭环` / `⚠️ 部分`（收尾在，但声明缺项或位置偏早）/ `❌ 不闭环`（有生产、没人收尾，exit 1）/
 `➖ 无需清理（没检测到）`。**`➖` 是「没查出来」，不是「没有」** —— 判据只看文本，拿不准就加 `--strict`。
 
-- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `py task` / `py block` / `py set` 命令
+- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `task` / `block` / `set` 命令
   （含任务号、`--deps`、清单与判据骨架），照抄即可把「删除临时文件」这个收尾任务节点建起来。
 - **同音词是主要误报源**（第一版实测误判 4 份真 plan）：「暂存」= git staging、「副本」= 工作副本、
   「残留」= 没留下坏链接、「截图」= 笔记里的附件 —— 都不是临时文件；强判据只认能指认

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import NoReturn
 
@@ -504,11 +505,11 @@ def cmd_note(a):
     print("✓ 已记入日志")
 
 def cmd_list(a):
-    if not PLANS_ROOT.exists():
+    if not plans_root().exists():
         print("（还没有 plan）")
         return
     rows = []
-    for d in sorted(PLANS_ROOT.iterdir()):
+    for d in sorted(plans_root().iterdir()):
         if (d / "plan.json").exists():
             p = json.loads((d / "plan.json").read_text(encoding="utf-8"))
             done, tot = progress(p)
@@ -637,7 +638,7 @@ def cmd_digest(a):
             mine.append((t, b))
     mine.sort(key=lambda tb: tb[1]["id"])
     lines = [f"📋 **{plan['title']}** · {done}/{tot} 块（{pct}%）· 更新 {plan['updated_at'][:16].replace('T',' ')}",
-             f"plan: `{d}/PLAN.md` — 开工前先读它，状态只通过 `plan.py` 改。"]
+             f"plan: `{d}/PLAN.md` — 开工前先读它，状态只通过 `loomery`（或 skill 里的 `plan.py`）改。"]
     if a.to:
         who = "你" if a.to == "you" else a.to
         if mine:
@@ -676,9 +677,13 @@ def cmd_digest(a):
 
 # ------------------------------------------------ argparse 与入口
 def _parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="plan.py", description="plan-weave 的 plan 工具")
+    ap = argparse.ArgumentParser(prog="loomery", description="loomery —— 一份 plan 的工具（谁认领/谁在做/下一步该谁动）")
     ap.add_argument("--no-render", action="store_true",
                     help="只改数据，不刷新 PLAN.md/plan.html/plan.canvas")
+    ap.add_argument("--plans-root", dest="plans_root", default="",
+                    help="plan 目录（等价于 $LOOMERY_PLANS_ROOT）—— 跨机器/多份 plan 库时显式指定")
+    ap.add_argument("--profile", default="",
+                    help="用某个 Hermes profile 的 plans（等价于 $LOOMERY_PROFILE），例：--profile plan-weave")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("new", help="新建 plan")
@@ -837,6 +842,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv=None):
     """任何 harness 的入口：返回退出码（0/1/2），自己不 sys.exit。"""
     a = _parser().parse_args(argv)
+    # 显式旗标优先：--plans-root 直接定死；--profile 则要让 profile 那条生效（清掉可能已设的 plans root）
+    if getattr(a, "plans_root", ""):
+        os.environ["LOOMERY_PLANS_ROOT"] = a.plans_root
+    elif getattr(a, "profile", ""):
+        os.environ.pop("LOOMERY_PLANS_ROOT", None)
+        os.environ["LOOMERY_PROFILE"] = a.profile
     try:
         if a.cmd == "list":
             return cmd_list(a) or 0

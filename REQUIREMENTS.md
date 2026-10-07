@@ -45,11 +45,12 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-03** | AI 能用 CLI 做节点级结构编辑：**在某个节点之后 / 两个节点之间 / 最早的节点之前插入节点**；**删除节点**；**把一个节点拆成一个任务流程** | 拆成任务流程 = `expand`（块→任务，含后续 `--step`）；删除 = `rm`；插入只有 `expand/collapse` 的副产品（`--into <块>` 插到某块之后、`--into <任务>` 追到末尾）。**缺**：显式「插到指定节点之前/之后」、**「两节点之间」**、**「最早节点之前」** | 部分 |
 | **R-04** | CLI 能快速改状态，但**带约束**：改为「已认领」必须附上**被谁认领**；改为「进行中」必须附上**主代理或子代理 pid** | `set … --by` 会写 `exec.by`（认得人是谁），`exec --delegation` 认得线程号；**但没有强制校验**（`--by` 可省、也无 pid 字段，改为 claimed/running 时不缺信息也能过） | 待做 |
 | **R-05** | 每个项目要先登记**协作者**（人类 / agent），节点必须派给协作者中的一员 | `new --owner "id=kind:label[@channel]"` 写 `participants`，`block --owner` 只是个自由字符串；**不校验** owner 是否在 participants 里，也不强制「先有协作者」 | 部分 |
-| **R-06** | 给用户的界面**不一定是 html 文件**：也可以是一个 Python 起的本地 web 服务，能在**多个 plan 之间切换** | `plan.py` 是纯 CLI；`plan.html` 是自包含单文件（能 `file://` 打开）。没有任何服务层，也没有「多 plan 一览/切换」的界面（`list` 只有一行文本） | 待做 |
+| **R-06** | 给用户的界面**不一定是 html 文件**：也可以是一个 Python 起的本地 web 服务，能在**多个 plan 之间切换** | `loomery` 是纯 CLI；`plan.html` 是自包含单文件（能 `file://` 打开）。没有任何服务层，也没有「多 plan 一览/切换」的界面（`list` 只有一行文本） | 待做 |
 | **R-07** | **需求要在 skill repo 里留档**，方便后期对齐；文档要有**单一入口**，入口要**完整指路**到细节文档 | 本文件 + [`docs/cli-reference.md`](docs/cli-reference.md) 就是这次的产物；README 加了「文档地图」指向这里 | 已落地（本次提交） |
-| **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 5 层：`plan.py`（薄壳）+ `planweave/{model,store,render,workers,cli}.py`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处；别的程序 `from planweave import store` 即可用 | 已落地 |
-| **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：15 个子命令（+3 别名）逐条列参数与退出码 | 已落地（本次提交） |
+| **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 5 层，包在**仓库根** `loomery/`：`model` / `store` / `render` / `workers` / `cli`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处；别的程序 `import loomery` 即可用；skill 侧只留一个薄壳 `scripts/plan.py` | 已落地 |
+| **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：15 个子命令（+3 别名）逐条列参数与退出码 | 已落地 |
 | **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block` 的 `--status` 默认已改成 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
+| **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomery/`（`pyproject.toml` + console scripts `loomery`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**改名依据**：`PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名。候选筛查（PyPI 是否已注册 + GitHub 同名项目体量）后取 **loomery**（织造工场；PyPI 未注册、GitHub 仅 ★3 的同名小仓库），备选 `plotboard` | 已落地 |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
@@ -77,8 +78,9 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 **R-10 的一个边界（在此写定，免得日后反复问）**：默认 `blocked` 只管**显式建块**（`block` 命令）；
 `expand --step` 追加的步骤留在 `pending` —— 它是「已经批过的那条活」的后续步骤，不是新提议。
 
-入口路径没变（仍是 `scripts/plan.py`），所以现有文档、`$P` 变量、remind/check 三个兄弟 skill 的
-调用方式一个字都没改；模块边界与「怎么接新前端」见 [`docs/architecture.md`](docs/architecture.md)。
+**R-11 的落法**：包在仓库根，`skills/` 只带薄壳；调用约定对使用者不变（skill 里仍是
+`python3 <skill>/scripts/plan.py <子命令> <slug>`），但**薄壳要先能找到包** —— 见
+[`docs/architecture.md`](docs/architecture.md) §4 的四步查找与失败提示。
 
 ## 5. 决策点（待用户拍板）
 

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loomery"
+version = "0.1.0"
+description = "跨 harness 的协作工作台：一份 plan.json 是唯一真相，人与 AI 在同一个画布上对齐（谁认领 / 谁在做 / 子代理线程）。"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "flmaximwang" }]
+keywords = ["plan", "collaboration", "multi-agent", "harness", "kanban", "single-source-of-truth"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Documentation",
+]
+# 纯 stdlib，零依赖 —— 这是它能到处跑（任何 harness / 任何机器）的前提
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/flmaximwang/AgentSkill-PlanWeave"
+Source = "https://github.com/flmaximwang/AgentSkill-PlanWeave"
+
+[project.scripts]
+loomery = "loomery.cli:main"
+plan = "loomery.cli:main"
+
+[tool.setuptools]
+packages = ["loomery"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+loomery = ["assets/*.html"]

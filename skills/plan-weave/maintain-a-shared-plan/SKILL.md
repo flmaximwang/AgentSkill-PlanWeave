@@ -6,7 +6,7 @@ author: Hermes Agent
 license: MIT
 metadata:
   hermes:
-    tags: [plan, collaboration, multi-agent, planweave, visualization]
+    tags: [plan, collaboration, multi-agent, loomery, visualization]
     category: plan-weave
     related_skills: [remind-collaborators, handle-a-recurring-progress-instruction, agent-to-agent-handoff]
 ---
@@ -38,12 +38,15 @@ metadata:
 $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
 ```
 
-纯 stdlib，可直接 `python3 "$P" ...`。入口是**薄壳**（`scripts/plan.py`），实现在同目录的 planweave 包里：
-`scripts/planweave/model.py`（模型与派生，纯函数）/ `scripts/planweave/store.py`（磁盘 + 唯一写入漏斗
-`commit()`）/ `scripts/planweave/render.py`（三视图）/ `scripts/planweave/workers.py`（线程探活）/
-`scripts/planweave/cli.py`（唯一 print 与退出码）。
-**别的 harness 不必走命令行**：`from planweave import store` 就能读写同一份 plan.json（跨 harness 约定见
-`scripts/planweave/__init__.py`）。
+**实现在仓库根的 loomery 包里**（纯 stdlib、零依赖）：model（模型与派生规则，纯函数）/ store（磁盘 +
+**唯一写入漏斗** `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print 与退出码）。
+这个 skill 只带一个**薄壳** `scripts/plan.py`：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」
+交给包，再按 `checkout → $LOOMERY_HOME → 已安装的 import → 已装好的 loomery 命令` 的顺序找包；
+四条都不成立时会打印该装哪一条（退出码 2），**不会抛看不懂的 ImportError**。
+包没装的话先装：`uv tool install --editable <repo>`（本机已装好，`loomery` / `plan` 在 `~/.local/bin`）。
+**别的 harness 不必走命令行**：装过包就能 `from loomery import store` 直接读写同一份 plan.json。
+`loomery`（或 `python3 -m loomery`）与 `$P` 完全等价；跨 profile / 多份 plan 库时用
+`loomery --profile <名字>` 或 `--plans-root <路径>`。
 
 ## 模型（借自 PlanWeave）
 
@@ -65,7 +68,7 @@ $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scri
 ## 状态表（图例顺序 = 一个块的一生）
 
 **流程**：待批准? → 等前置 → 待认领 → 已认领 → 进行中 → 待评审 → 已完成；旁支只有 `已取消`。
-**图例按这个顺序排**（`assets/plan.html` 里 `C`/`ZH` 的键序即图例序，改顺序就是改那两个对象的键序）。
+**图例按这个顺序排**（模板里的 `C`/`ZH` 两个对象的键序即图例序，改顺序就是改那两个对象的键序）。
 
 | 中文名 | 内部值 | 是什么 | 谁该动 |
 |---|---|---|---|
@@ -364,7 +367,7 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   的那一态会把固定定位元素画错位、并留一片未绘制的空白带（看着像布局塌了；旧版同样复现 ⇒ headless 伪影，
   不是产物缺陷）。这一态只信几何数字：`#detailpanel` 满足 `top==0 && bottom==innerHeight && right==innerWidth`、
   `#splitter.right ≈ panel.left`、`body` 的 `padding-right == panel.width`、且节点最右缘 ≤ `panel.left`。
-- 改 `assets/plan.html` 后的自检（2026-10-07 实测）：`plan.py render` 后拿 headless Chrome
+- 改模板（随包发布的 `plan.html`）后的自检（2026-10-07 实测）：`loomery render <slug>` 后拿 headless Chrome
   `--dump-dom`（同样要 `perl -e 'alarm shift; exec @ARGV' 12` 兜住不退出）读 `#graph` 的 `clientWidth`
   与每个节点的 `style="left/top/width"`，判据是「各泳道行数 == ceil(块数 / 每行块数)」+「最右缘 ≈
   `#graph` 宽 − PAD」+「块数 == plan.json 里的块数」。想验「按容器宽度重排」不必真改窗口：
@@ -372,20 +375,15 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   直接调 `window.graph()` 再量一次即可；resize 事件那条路（rAF 合帧）用 `dispatchEvent(new Event('resize'))`
   + 两层 `requestAnimationFrame` 量。
 - 渲染看板时若所有块都 done，泳道会折叠成空图 —— 这是正常现象（去掉「隐藏已完成」即可）。
-- 改 `assets/plan.html` 后不用开浏览器验证布局：用 node 打桩跑一遍内联脚本，能直接拿到每个节点的
+- 改模板（随包的 `plan.html`）后不用开浏览器验证布局：用 node 打桩跑一遍内联脚本，能直接拿到每个节点的
   坐标并暴露渲染异常（本 skill 就是这么发现"隐藏已完成后节点被推到屏幕外"的）。
 
 ## Support files
 
 | 文件 | 承担什么 |
 |---|---|
-| `scripts/plan.py` | CLI 入口（薄壳）：插 `sys.path` + 调 `planweave.cli.main()` |
-| `scripts/planweave/model.py` | 数据模型 / 状态机 / 派生状态 / 依赖与图 / 粒度规则（纯函数，出错抛 `PlanError`） |
-| `scripts/planweave/store.py` | 磁盘读写 + **唯一写入漏斗** `commit()`（改 json 后同步三个视图） |
-| `scripts/planweave/render.py` | 三视图生成（PLAN.md / plan.canvas / plan.html），只返回字符串 |
-| `scripts/planweave/workers.py` | 子代理线程探活（七种结论） |
-| `scripts/planweave/cli.py` | argparse + 15 个子命令（**唯一 print、唯一退出码**） |
-| `assets/plan.html` | 可视化模板（`/*__PLAN_DATA__*/null` 处注入 plan.json） |
+| `scripts/plan.py` | skill 侧的**薄壳**：交代 plans 根 → 找包 → 调 `loomery.cli.main()`（找不到包时打印装法，退出码 2） |
+| loomery 包（仓库根） | 实现在那里：model（模型/派生）/ store（磁盘 + 唯一写入漏斗 `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print、唯一退出码）。**改实现去那里，改「怎么用」才改本文件** |
 | 兄弟 skill | `check-plan-node-commands`（每个块的命令与变量定义）、`check-plan-temp-hygiene`（临时文件闭环）、`remind-collaborators`（提醒纪律） |
 
 静态图（给聊天/群用，**只在被明确索取时才做**）落在 plan 目录的 `plan.png`；默认交付是 `file://`
