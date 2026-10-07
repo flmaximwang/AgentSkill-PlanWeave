@@ -10,6 +10,14 @@ Hermes profile `plan-weave`（角色：**协作计划记录员**）的 skill 合
 
 **public 仓库**：内容与具体机器无关，可分享。
 
+## 文档地图（先读哪个）
+
+- **要什么 / 做到哪了 / 缺什么** → [`REQUIREMENTS.md`](REQUIREMENTS.md) —— **需求的唯一入口**，
+  它里面有一张完整的文档地图（哪类细节去哪份文件）。需求不散落在各 skill 正文里。
+- **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（15 个子命令逐条，含退出码）。
+- **动手改一份 plan** → [`skills/plan-weave/maintain-a-shared-plan/SKILL.md`](skills/plan-weave/maintain-a-shared-plan/SKILL.md)（模型 / 状态表 / 谁在做+线程 / 坑）。
+- 本文件剩下的部分 = 仓库索引：五个 skill 各是什么、怎么装、盲测记录。
+
 ## 索引
 
 | skill | 用途 | 可执行入口 |
