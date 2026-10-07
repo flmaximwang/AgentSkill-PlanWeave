@@ -7,6 +7,8 @@
 <style>
   :root{
     --bg:#f7f8fa; --panel:#fff; --ink:#1f2328; --dim:#6b7280; --line:#e3e6ea;
+    /* 详情栏宽度：默认随窗口伸缩，拖动分隔线后由 JS 写成固定 px（见 syncDetailW） */
+    --detail-w:clamp(280px,26vw,420px);
     --done:#2f9e44; --running:#1c7ed6; --claimed:#0c8599; --review:#7048e8;
     --ready:#f08c00; --waiting:#98a2b3; --blocked:#e03131;
     /* 已取消与「等前置」同色，靠虚线/空心区分（用户 2026-10-06 定） */
@@ -64,22 +66,32 @@
              justify-content:space-between;gap:6px}
   .node.done{opacity:.6}
   .node.cancelled{border-left-style:dashed}
-  #detailpanel{position:fixed;right:20px;top:84px;width:360px;max-height:78vh;z-index:60;
-               display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);
-               border-radius:12px;box-shadow:0 12px 44px rgba(16,24,40,.24);overflow:hidden}
+  /* 详情栏：固定在右侧、占满整页高度（不再拖来拖去）；body 同步让出这段宽度，
+     所以画布不会被盖住。宽度由 #splitter 这条分隔线拖拽控制。 */
+  body.detail-open{padding-right:var(--detail-w)}
+  #detailpanel{position:fixed;right:0;top:0;bottom:0;width:var(--detail-w);z-index:60;
+               display:none;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);
+               box-shadow:-10px 0 30px rgba(16,24,40,.10);overflow:hidden}
   #detailpanel.open{display:flex}
   #detailbar{display:flex;align-items:center;justify-content:space-between;gap:8px;
              padding:6px 8px 6px 12px;border-bottom:1px solid var(--line);background:var(--bg);
-             cursor:move;user-select:none}
+             user-select:none}
+  #splitter{position:fixed;top:0;bottom:0;right:var(--detail-w);width:9px;z-index:61;
+            display:none;cursor:col-resize}
+  body.detail-open #splitter{display:block}
+  #splitter::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--line)}
+  #splitter:hover::after,#splitter.dragging::after,#splitter:focus-visible::after{
+            left:3px;width:3px;background:var(--running)}
   #detailbar b{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
   #detailbar .dbtns{display:flex;gap:4px}
   #detailbar button{border:1px solid var(--line);background:var(--panel);color:var(--dim);
                     border-radius:6px;width:24px;height:22px;padding:0;line-height:1;font-size:14px;
                     cursor:pointer}
   #detailbar button:hover{color:var(--ink);border-color:var(--dim)}
-  #detail{padding:14px 16px;font-size:13px;overflow:auto}
-  @media (max-width:1020px){
-    #detailpanel{left:12px;right:12px;width:auto;top:auto;bottom:12px;max-height:52vh}
+  #detail{padding:14px 16px;font-size:13px;overflow:auto;flex:1 1 auto;min-height:0}
+  @media (max-width:900px){
+    /* 窄屏别让详情栏吃掉画布：默认栏宽收窄（拖过分隔线的话以拖出来的宽度为准） */
+    :root{--detail-w:clamp(240px,42vw,340px)}
   }
   #detail h3{margin:0 0 6px;font-size:15px}
   #detail .kv{margin:8px 0;color:var(--dim)}
@@ -115,7 +127,7 @@
       <h2>任务图（块 = 文档，边 = 依赖）</h2>
       <div class="toolbar">
         <label><input type="checkbox" id="hidedone"> 隐藏已完成</label>
-        <span>点节点或卡片看详情（详情浮窗在最上层，拖标题栏可移开 · Esc 关闭）</span>
+        <span>点节点或卡片看详情（详情固定在右侧，拖分隔线调宽度 · Esc 关闭）</span>
       </div>
       <div id="graph"><svg id="edges"></svg></div>
       <div class="legend" id="legend"></div>
@@ -124,6 +136,8 @@
   </div>
 </div>
 
+<div id="splitter" tabindex="0" role="separator" aria-orientation="vertical"
+     aria-label="拖动调整详情栏宽度" title="拖动调整详情栏宽度（方向键微调）"></div>
 <aside id="detailpanel">
   <div id="detailbar">
     <b>详情</b>
@@ -336,8 +350,12 @@ function markSel(bid){
     m.classList.toggle('sel', m.dataset.id === bid));
 }
 function closeDetail(){
-  document.getElementById('detailpanel').classList.remove('open');
+  const p = document.getElementById('detailpanel');
+  if (!p.classList.contains('open')) return;       // Esc 随时会按，别无谓重排
+  p.classList.remove('open');
+  document.body.classList.remove('detail-open');
   CUR = null; markSel(null);
+  view('graph', graph);                            // 画布把让给详情栏的宽度收回来
 }
 function detail(b, opts){
   if (!b) return;
@@ -360,6 +378,10 @@ function detail(b, opts){
          ${esc(r.from||'')}→${esc(r.to||'')}<br>${esc(r.note||'')}</div>`).join('')}`:''}
   `;
   document.getElementById('detailpanel').classList.add('open');
+  if (!document.body.classList.contains('detail-open')){
+    document.body.classList.add('detail-open');
+    view('graph', graph);                          // 画布让出详情栏的宽度，节点按新宽度重排
+  }
   markSel(b.id);
   if (opts && opts.reveal){
     const n = [...document.querySelectorAll('.node')].find(m => m.dataset.id === b.id);
@@ -388,34 +410,54 @@ view('header', header); view('nownext', nownext); view('legend', legend);
 view('graph', graph); view('journal', journal);
 document.getElementById('detailclose').onclick = closeDetail;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
-// 浮窗可拖动：抓标题栏（按钮除外）拖走，松手即停；越界会被夹回窗口内
+// ── 详情栏宽度：固定在右侧、占满整页高度；一条分隔线同时改「详情栏宽」与「画布宽」
+//    （画布宽 = 窗口宽 − 详情栏宽：body 让出同样的 padding-right，节点因此不会被详情盖住）
+const DWKEY = 'plan.detailw.' + (PLAN.slug || '');
+const DWMIN = 240, CANVASMIN = 360;    // 栏最小宽 / 画布最小宽
+let detailW = null;                    // null = 用 CSS 里的默认宽度（clamp，随窗口伸缩）
+let redrawRAF = 0;
+function scheduleRedraw(){             // 一帧内多次触发只重排一次
+  if (redrawRAF) return;
+  redrawRAF = requestAnimationFrame(() => { redrawRAF = 0; view('graph', graph); });
+}
+function setDetailW(px, redraw){
+  detailW = Math.max(DWMIN, Math.min(Math.round(px), Math.max(DWMIN, window.innerWidth - CANVASMIN)));
+  document.documentElement.style.setProperty('--detail-w', detailW + 'px');
+  if (redraw) scheduleRedraw();
+}
+try { const s = localStorage.getItem(DWKEY); if (s) setDetailW(parseFloat(s), false); } catch(e){}
 (function(){
+  const sp = document.getElementById('splitter');
   const panel = document.getElementById('detailpanel');
-  const bar = document.getElementById('detailbar');
-  let dragging = false, ox = 0, oy = 0;
-  bar.addEventListener('mousedown', ev => {
-    if (ev.target.closest('button')) return;
-    const r = panel.getBoundingClientRect();
-    ox = ev.clientX - r.left; oy = ev.clientY - r.top;
-    // 先把实际尺寸钉住：窄屏下浮窗是 width:auto，脱开 right 后会缩成内容宽
-    panel.style.width = r.width + 'px';
-    panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px'; panel.style.right = 'auto';
-    dragging = true; ev.preventDefault();
+  let dragging = false;
+  const curW = () => (detailW != null ? detailW : panel.getBoundingClientRect().width);
+  sp.addEventListener('mousedown', ev => {
+    dragging = true; sp.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    ev.preventDefault();
   });
   window.addEventListener('mousemove', ev => {
-    if (!dragging) return;
-    const x = Math.max(4, Math.min(ev.clientX - ox, window.innerWidth - panel.offsetWidth - 4));
-    const y = Math.max(4, Math.min(ev.clientY - oy, window.innerHeight - panel.offsetHeight - 4));
-    panel.style.left = x + 'px'; panel.style.top = y + 'px';
+    if (dragging) setDetailW(window.innerWidth - ev.clientX, true);   // 分隔线跟着指针，画布跟着重排
   });
-  window.addEventListener('mouseup', () => { dragging = false; });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; sp.classList.remove('dragging'); document.body.style.userSelect = '';
+    try { localStorage.setItem(DWKEY, String(detailW)); } catch(e){}
+    scheduleRedraw();
+  });
+  // 焦点在分隔线上时左右方向键微调（左 = 变宽）
+  sp.addEventListener('keydown', ev => {
+    if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+    ev.preventDefault();
+    setDetailW(curW() + (ev.key === 'ArrowLeft' ? 24 : -24), true);
+    try { localStorage.setItem(DWKEY, String(detailW)); } catch(e){}
+  });
 })();
 document.getElementById('hidedone').onchange = () => view('graph', graph);
-// 窗口宽度变了就按新宽度重排；拖动窗口会连发 resize，用 rAF 合帧，避免每个像素重画一次
-let rzRAF = 0;
+// 窗口尺寸变了：先把详情栏宽度夹进新窗口，再按新宽度重排；拖动窗口会连发 resize，用 rAF 合帧
 window.addEventListener('resize', () => {
-  if (rzRAF) cancelAnimationFrame(rzRAF);
-  rzRAF = requestAnimationFrame(() => { rzRAF = 0; view('graph', graph); });
+  if (detailW != null) setDetailW(detailW, false);
+  scheduleRedraw();
 });
 </script>
 </body>

@@ -272,6 +272,16 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   原先的 `PER=4` + `W=216` 在宽屏上会让块无故折到第二行、右边空一大片（用户截图就是这个症状）。
 - 一条任务的块数超过这一屏的列数时仍会折行（如 11 块 / 每行 9 列），这是宽度上限内的正常行为；
   `overflow:auto` 保证不丢数据。
+- **详情栏是右侧固定栏，不是浮窗**（2026-10-07 用户定：不用拖来拖去、贴右占满整页高、画布为它让出一段
+  宽度、一条分隔线同时改两边的宽）：`--detail-w` 这一个变量同时驱动 `#detailpanel` 的宽度和
+  `body.detail-open{padding-right}`，所以画布 `#graph` 的 `clientWidth` 会跟着变、`graph()` 自动重排；
+  **打开 / 关闭 / 拖动后都必须 `view('graph', graph)`**，否则节点留在旧宽度上、右侧那些会被详情栏盖住。
+  拖完把宽度写进 localStorage（`plan.detailw.<slug>`），窗口 resize 时先夹进窗口再重排。
+  **别退回「浮窗 + 拖标题栏」**：浮窗会盖住节点，用户明确否过。
+- 截图验详情栏之前**先把页面滚回顶部**：点节点会触发 `scrollIntoView`，而 headless Chrome 在「已经滚动过」
+  的那一态会把固定定位元素画错位、并留一片未绘制的空白带（看着像布局塌了；旧版同样复现 ⇒ headless 伪影，
+  不是产物缺陷）。这一态只信几何数字：`#detailpanel` 满足 `top==0 && bottom==innerHeight && right==innerWidth`、
+  `#splitter.right ≈ panel.left`、`body` 的 `padding-right == panel.width`、且节点最右缘 ≤ `panel.left`。
 - 改 `assets/plan.html` 后的自检（2026-10-07 实测）：`plan.py render` 后拿 headless Chrome
   `--dump-dom`（同样要 `perl -e 'alarm shift; exec @ARGV' 12` 兜住不退出）读 `#graph` 的 `clientWidth`
   与每个节点的 `style="left/top/width"`，判据是「各泳道行数 == ceil(块数 / 每行块数)」+「最右缘 ≈
