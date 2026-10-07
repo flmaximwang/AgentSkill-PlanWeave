@@ -3,7 +3,8 @@
 **这份文件是 loomerto 需求的唯一入口。** 想知道「要什么、做到哪了、细节在哪」，从这里出发；
 不要另建需求清单、也不要把需求散在各个 skill 的正文里 —— 正文只写「怎么做」，需求写在这。
 
-> 最后对齐：2026-10-07 · 代码基线 `7a4addd`（= 本机 default profile 里那五条 skill 与包所 pin 的 revision）
+> 最后对齐：2026-10-08 · 代码基线 `__MERGE_SHA__`（= `block edit` 那轮重组 merged main 的 `move`；本机 default profile 里
+> 那五条 skill 的副本已同步到同一版；`plan-weave` profile 那份仍是旧一代，待随该 bot 退役一并清）
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
 ## 0. 文档地图（每个细节去哪看）
@@ -41,7 +42,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | # | 需求（用户原话的意思） | 现状（代码里真有的） | 状态 |
 |---|---|---|---|
 | **R-01** | 每个节点要表明**谁认领了 / 谁在做**，并能给出**具体的子代理线程**，以便检查子代理是否正常 | `block.owner`（认领人）+ `block.exec`（`by`/`delegation`/`task_index`/`transcript`/`started`）+ 命令 `block set`（`--by`）/ `task set`、`workers`（七值，⚠/❌ 退 1）；三视图都显示「@认领人→@在做的人」与线程路径。SKILL.md 有专节 | 已落地 `3d774bd` |
-| **R-02** | **人与 AI 双向对齐**：用户可以直接在画布上改 plan（改完自动同步 json 与 md）；AI 通过命令改 json 并同步 md 与画布。目的是不必用语言描述复杂流程 | **第一版已落地**：`loomerto open <plan 数据文件>` 起本地服务（只绑 `127.0.0.1`、纯 stdlib），画布上可改 块的标题/做什么/判据/认领人/类型/**状态**、新建任务与新建块、拖动卡片改同泳道先后；每次改动走 `edits`（唯一实现）→ `store.commit()`，所以 json 与 `PLAN.md`/`plan.html`/`plan.canvas` 同时更新；前端带 `rev`（= `updated_at`），过期回 **409** 不自动合并。协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md)。**故意不做**：删块/删任务、跨泳道拖动、改 `deps`/`review_of`（会改块 id 或接线 ⇒ 走 `block rm` / `block insert` / `block expand` / `block collapse`） | 已落地（第一版） |
+| **R-02** | **人与 AI 双向对齐**：用户可以直接在画布上改 plan（改完自动同步 json 与 md）；AI 通过命令改 json 并同步 md 与画布。目的是不必用语言描述复杂流程 | **已落地**：`loomerto open <plan 数据文件>` 起本地服务（只绑 `127.0.0.1`、纯 stdlib），画布上可改 块的标题/做什么/判据/认领人/类型/**状态**、新建任务与新建块、拖动卡片改同泳道先后、**拖到别的泳道 = 换任务**（R-16）；每次改动走 `edits`（唯一实现）→ `store.commit()`，所以 json 与 `PLAN.md`/`plan.html`/`plan.canvas` 同时更新；前端带 `rev`（= `updated_at`），过期回 **409** 不自动合并。协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md)。**故意不做**：删块/删任务、直接改 `deps`/`review_of`（会一脚踩坏判据或接线 ⇒ 走 `block rm` / `block move` / `block expand` / `block collapse`） | 已落地 |
 | **R-03** | AI 能用 CLI 做节点级结构编辑：**在某个节点之后 / 两个节点之间 / 最早的节点之前插入节点**；**删除节点**；**把一个节点拆成一个任务流程** | 拆成任务流程 = `block expand`（块→任务，含后续 `--step`）；删除 = `block rm`（块）/ `task rm`（任务，连带它的块）；**定点插入 = `block insert`**（`--before` / `--after`：插到锚块之前时新块接手锚块原来等的东西、锚块改成只等新块；插到之后时原来等锚块/评审锚块的改成等新块）—— 「两节点之间」= 插到后一个之前，「最早节点之前」= 插到该任务第一个块之前；成环报错且一字不写，`--dry-run` 只改内存副本 | 已落地 `d47d2ed` |
 | **R-04** | CLI 能快速改状态，但**带约束**：改为「已认领」必须附上**被谁认领**；改为「进行中」必须附上**主代理或子代理 pid** | `block set … --by` 会写 `exec.by`（认得人是谁），同一句里 `--delegation` / `--task-index` / `--transcript` 认得线程与转录；**状态已会卡参数**（在途状态才收线程登记、产物只在 done 收），但**没有强制校验**（`--by` 仍可省、也无 pid 字段，改为 claimed/running 时不缺信息也能过） | 待做 |
 | **R-05** | 每个项目要先登记**协作者**（人类 / agent），节点必须派给协作者中的一员 | `plan new --owner "id=kind:label[@channel]"` 写 `participants`，`block new --owner` / `block assign --to` 只是个自由字符串（assign 会在 id 不在名单里时打一行 ⚠）；**不校验** owner 是否在 participants 里，也不强制「先有协作者」 | 部分 |
@@ -52,12 +53,13 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block new` / `block insert` 的 `--status` 默认是 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`block expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
 | **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（intake 归 `agent-orchestration`），lock 的 identifier/URL 指向 `flmaximwang/Loomerto`、revision `7eed38f`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`，identifier 仍是旧仓库名），待随该 bot 退役一并清 | 已落地 |
 | **R-12** | 「**给一个 cli 入口**」—— 要能按 ref（`T-003#B-004` 这种）查**一个块/一条任务**的详细信息，而不是只给命令清单 | 两个只读入口（都带别名 `info`）：`py block show <slug> <块ref> [--json] [--runs N]` 给 状态/类型/归属/认领(含时刻)/在做+线程+转录/做什么/判据/依赖/评审/返工 ⟲N/产物/run/三视图路径；`py task show <slug> <任务ref> [--json]` 给 状态/认领/前置/块一览。纯只读（不落盘、不重渲、不写日志），ref 与对象类型不符退 2 并点明该用哪个 | 已落地 `d47d2ed` |
-| **R-13** | **调用式**：「我希望的格式是 `loomerto --plan <plan data file> command`」；并且「**不要支持 profile** —— 我从来没有定义过 loomerto 就是给 hermes 用的」 | 全局旗标换成 **`--plan <plan 数据文件>`**（= `$LOOMERTO_PLAN_FILE`；给目录也行）：只认这一份，**命令里不再写 slug**（位置参数整体左移一位：`block set <ref> <status>`、`task set <ref> <status>`、`block show/rm/insert/expand/collapse <ref>`、`task show/rm <ref>`、`note <text>`）。`--plans-root`（= `$LOOMERTO_PLANS_ROOT`）保留给「一份库里有好几份」。**`--profile` / `$LOOMERTO_PROFILE` 已从包里删除**：`plans_root()` 不再推断 `~/.hermes/...`，`exec --profile` 也删了（转录路径改由调用方 `--transcript <路径>` 给，`workers.py` 里那三个 hermes_home/live_root/transcript_path 助手一并删掉）；两个都没给时只看**当前目录的 `plan.json`**（没有就退 2 并打印该给什么）。 | 已落地 `c0ad8c8` |
+| **R-13** | **调用式**：「我希望的格式是 `loomerto --plan <plan data file> command`」；并且「**不要支持 profile** —— 我从来没有定义过 loomerto 就是给 hermes 用的」 | 全局旗标换成 **`--plan <plan 数据文件>`**（= `$LOOMERTO_PLAN_FILE`；给目录也行）：只认这一份，**命令里不再写 slug**（位置参数整体左移一位：`block set <ref> <status>`、`task set <ref> <status>`、`block show/rm/insert/move/expand/collapse <ref>`、`task show/rm <ref>`、`note <text>`）。`--plans-root`（= `$LOOMERTO_PLANS_ROOT`）保留给「一份库里有好几份」。**`--profile` / `$LOOMERTO_PROFILE` 已从包里删除**：`plans_root()` 不再推断 `~/.hermes/...`，`exec --profile` 也删了（转录路径改由调用方 `--transcript <路径>` 给，`workers.py` 里那三个 hermes_home/live_root/transcript_path 助手一并删掉）；两个都没给时只看**当前目录的 `plan.json`**（没有就退 2 并打印该给什么）。 | 已落地 `c0ad8c8` |
 
-| **R-14** | **命令分组**：「`loomerto new` 改成 `loomerto plan new`；`loomerto task` 改成 `loomerto task new`」 | `plan` 与 `task` 成了**分组**（各带子命令表），`plan new` = 原来的 `new`、`task new` = 原来的 `task`；顶层的 `new` / `task` **已不存在**（旧写法会退 2 并列出可用命令）。后续 R-16 把 `block` 也升成分组、`set`/`rm`/`expand`/`collapse`/`show` 挪进分组，顶层的平铺动作只剩 8 个 | 已落地 `c0ad8c8`（R-16 再改） |
-| **R-15** | 「还要有一个 `loomerto open` 命令，用以**从 1 个 json 打开可编辑的画布**」 | `open`：起纯 stdlib 本地服务（只绑 `127.0.0.1`，默认自动挑端口 + 开浏览器），画布可改 标题/做什么/判据/认领人/类型/状态、新建任务与块、拖动改同泳道先后；写回走 `edits` → `store.commit()`（json + 三视图同步），带 `rev` 冲突检查（409）；**观感与只读看板共用 `loomerto/assets/theme.css`**（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例一份来源，两页不会各长一套）。实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`；协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md) | 已落地 |
+| **R-14** | **命令分组**：「`loomerto new` 改成 `loomerto plan new`；`loomerto task` 改成 `loomerto task new`」 | `plan` 与 `task` 成了**分组**（各带子命令表），`plan new` = 原来的 `new`、`task new` = 原来的 `task`；顶层的 `new` / `task` **已不存在**（旧写法会退 2 并列出可用命令）。后续 R-17 把 `block` 也升成分组、`set`/`rm`/`expand`/`collapse`/`show`/`move` 全部挪进分组，顶层的平铺动作只剩 8 个 | 已落地 `c0ad8c8`（R-17 再改） |
+| **R-15** | 「还要有一个 `loomerto open` 命令，用以**从 1 个 json 打开可编辑的画布**」 | `open`：起纯 stdlib 本地服务（只绑 `127.0.0.1`，默认自动挑端口 + 开浏览器），画布可改 标题/做什么/判据/认领人/类型/状态、新建任务与块、拖动改同泳道先后、跨泳道拖 = 换任务（R-16）；写回走 `edits` → `store.commit()`（json + 三视图同步），带 `rev` 冲突检查（409）；**观感与只读看板共用 `loomerto/assets/theme.css`**（颜色/字体/状态胶囊/按钮/分隔线/进度条/图例一份来源，两页不会各长一套）。实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`；协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md) | 已落地 |
+| **R-16** | 「Loomerto 画布现在要支持**跨 task 拖动 block**」（2026-10-07，要求在新 worktree 里实现） | 画布上把卡片拖到**别的泳道**（卡片之间＝插在那张卡前面；泳道空白处＝追加到末尾）即换任务。**块 id 是位置即身份**，所以一次 `move` 做三件事：换 id（目标任务里取最小空位）→ 把引用旧 id 的 `deps` / `review_of` / `expanded_from.block` **一次重接** → **查环，成环就拒改且一个字不写**（400，界面显示原因）。落点是 `edits.move_block`（CLI 与画布共用）；命令入口 = `loomerto block move <ref> --task T-00N [--index N]`；协议第六个 op = `move`（响应带 `ref` = 新 id，前端靠它保住选中）。源任务被搬空**不删任务**（空泳道留着）。故意不做：只在画布上做「拖」，不做「拖的同时顺带改字段」 | 已落地 `7b71629`（合入 main；装好的 `loomerto` 也会立刻认 `move` —— editable 安装指的就是这个 checkout） |
 
-| **R-16** | **命令面按对象分组（第二轮）**：「`block` 命令也升级为分类命令，原 `block` 改为 `block new`，`set` 改为 `block set`，`expand`/`collapse` 都改成 `block` 子命令，`rm` 拆份到 `task` 和 `block` 中，还要加 `insert` 命令，`show` 也拆份到 `task` 和 `block` 中」；「`block describe` 用于修改 block 详情（要留日志）」；「`block assign` 用于为参与者分配 block」；「exec 命令与 set 命令有交叉，把 exec 并入 set」；「set 需要支持在设置不同的 status 时限制不同的参数」；「在新的 worktree 中操作」 | 一级命令 **17 → 12**：`plan` / `task` / `block` 三个分组 + `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 八个单层动作。`task` 组 = `new` / `set` / `rm` / `show`；`block` 组 = `new` / `insert` / `set` / `describe` / `assign` / `expand` / `collapse` / `rm` / `show`（22 个叶子命令）。**`exec` 并入 `set`**（`--by` / `--delegation` / `--task-index` / `--transcript` / `--unset` 都成了 `set` 的旗标，`doing` 别名随之删除），顶层 `set` / `rm` / `expand` / `collapse` / `show` 一律删除（旧写法退 2 并列可用命令）。**`block insert` 新增**（见 R-03）。**`set` 按状态卡参数**：`edits.BLOCK_SET_FLAGS` / `TASK_SET_FLAGS` 一份表，在途状态才收 `--by`/线程三件套、`--artifact` 只在 `done` —— 命令与画布同一处受约束。跨组错用给人话错误（`task set <块ref>` → 「这是块不是任务 —— 块状态用 `block set`」）。**顺带补的守卫**：`task rm` 除了任务级 `deps`，现在还拒删「有别的任务的块依赖它」的任务（`--force` 才删），不然那几条依赖会变悬空 | 已落地 `d47d2ed` |
+| **R-17** | **命令面按对象分组（第二轮）**：「`block` 命令也升级为分类命令，原 `block` 改为 `block new`，`set` 改为 `block set`，`expand`/`collapse` 都改成 `block` 子命令，`rm` 拆份到 `task` 和 `block` 中，还要加 `insert` 命令，`show` 也拆份到 `task` 和 `block` 中」；「`block describe` 用于修改 block 详情（要留日志）」；「`block assign` 用于为参与者分配 block」；「exec 命令与 set 命令有交叉，把 exec 并入 set」；「set 需要支持在设置不同的 status 时限制不同的参数」；「在新的 worktree 中操作」 | 一级命令 **18 → 12**：`plan` / `task` / `block` 三个分组 + `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 八个单层动作（共 23 个叶子命令）。`task` 组 = `new` / `set` / `rm` / `show`；`block` 组 = `new` / `insert` / `set` / `describe` / `assign` / `move` / `expand` / `collapse` / `rm` / `show`。**`exec` 并入 `set`**（`--by` / `--delegation` / `--task-index` / `--transcript` / `--unset` 都成了 `set` 的旗标，`doing` 别名随之删除），顶层 `set` / `rm` / `move` / `expand` / `collapse` / `show` 一律删除（旧写法退 2 并列可用命令）。**`block insert` 新增**（见 R-03）；**`block move` 是 R-16 那条 move 的新家**（顶层 `move` 删掉，画布与服务不受影响）。**`block describe`**：只改块的详情（标题/做什么/判据/类型），不动状态、改动记进日志。**`block assign`**：把块指派给某个参与方（`--to` / `--unset`），不动状态，记 `kind=assign`。**`set` 按状态卡参数**：`edits.BLOCK_SET_FLAGS` / `TASK_SET_FLAGS` 一张表 —— 在途状态才收 `--by`/线程三件套、`--artifact` 只在 `done`，命令与画布同一处受约束。跨组错用给人话错误（`task set <块ref>` → 「这是块不是任务 —— 块状态用 `block set`」）。**顺带补的守卫**：`task rm` 除任务级 `deps` 外，现在还拒删「有别的任务的块依赖它」的任务（`--force` 才删），不然那几条依赖会变悬空 | 已落地 `d47d2ed` + 合并分支（见文件头基线） |
 
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
@@ -68,8 +70,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 - **`task`**：`new`（任务线）｜`set`（任务状态；在途时才登记在做的人与线程）｜`rm`（真删任务，连带它的块）｜
   `show`（一条任务的详情，只读）
 - **`block`**：`new`（追加到任务末尾）｜`insert`（插到某块之前/之后，接线自动改对）｜`set`（改状态 + 谁在做 + 子代理线程）｜
-  `describe`（改详情，留日志）｜`assign`（把块指派给某个参与方）｜`expand`（块→任务流程）｜`collapse`（任务→块）｜
-  `rm`（真删块，被引用时默认拒删）｜`show`（**一个**块的详情，只读）
+  `describe`（改详情，留日志）｜`assign`（把块指派给某个参与方）｜`move`（换泳道：换 id + 重接引用 + 查环）｜
+  `expand`（块→任务流程）｜`collapse`（任务→块）｜`rm`（真删块，被引用时默认拒删）｜`show`（**一个**块的详情，只读）
 - **单层**：`note`（写日志）｜`current`（现在该谁动）｜`check`（图质量，有错退 1）｜
   `workers`（线程还在动吗，⚠/❌ 退 1）｜`render`（重渲 md/html/canvas）｜`digest`（提醒文本）｜`list`｜
   `open`（起本地服务，从 1 个 json 打开**可编辑**的画布；只绑 127.0.0.1）
@@ -82,8 +84,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 
 | 缺口 | 落在哪 |
 |---|---|
-| R-02 画布写回的**剩余部分**（删块、跨泳道移动、改 `deps`/`review_of`） | 协议与冲突规则已写定（[`docs/canvas-sync.md`](docs/canvas-sync.md)）；剩下这三类都**先要在 `model.py` 里长出结构演算**（移动块 = 改 id + 把引用它的 `deps` / `review_of` 全部重接 —— 现在只有 `expand` / `collapse` 会做这件事），画布层才可能接上 |
-| R-04 状态约束 / R-05 协作者校验 | **改动现在只有一份实现**（`edits.py`）：加一个 `validate(plan, who, what)` 在 `set_status` / `add_block` / `add_task` 入口处调用即可 —— 命令与画布同时受约束，不必动 22 个叶子命令 |
+| R-02 画布写回的**剩余部分**（删块、删任务、直接改 `deps`/`review_of`） | 协议与冲突规则已写定（[`docs/canvas-sync.md`](docs/canvas-sync.md)）。**跨泳道移动已落地**（R-16）：结构演算在 `edits.move_block`（换 id + 重接 `deps`/`review_of` + 查环），CLI（`block move`）与画布共用。剩下的「删块 / 删任务」要在**界面口径**上先想清楚（`block rm` 会检查谁引用它、被引用时要人点头），「改依赖接线」是结构不是字段 —— 两者都留命令层 |
+| R-04 状态约束 / R-05 协作者校验 | **改动现在只有一份实现**（`edits.py`）：加一个 `validate(plan, who, what)` 在 `set_status` / `add_block` / `add_task` 入口处调用即可 —— 命令与画布同时受约束，不必动 23 个叶子命令 |
 | R-06 多 plan 切换 | 服务层已在 `serve.py`（只 import `store` + `edits` + `model`）；要一览就照 `cmd_list` 的路子遍历 `plans_root()` 下每个 `<slug>/plan.json`。**不许在服务里另存状态** |
 
 **R-10 的一个边界（在此写定，免得日后反复问）**：默认 `blocked` 只管**显式建块**（`block new` / `block insert`）；
@@ -98,9 +100,10 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 1. **R-04 的「pid」到底要哪种**：主代理的进程 pid（本机可判活）、还是 Hermes 的 session/delegation id
    （跨机器可读）？我建议两者都收：`--agent-pid`（本机主代理）+ 现有的 `--delegation`（子代理线程），
    校验时至少给一个 —— 只有 pid 的话，跨机器/跨 profile 就没法回查。
-2. **R-02 的写回边界**（**已按建议落地第一版**，并加了一条）：位置与结构 = 拖拽改同泳道先后；
+2. **R-02 的写回边界**（**已落地**，含后来补的 R-16）：位置与结构 = 拖拽改同泳道先后 + 跨泳道换任务；
    字段编辑 = 标题/做什么/判据/认领人/类型；**另加了「改状态」**（认领·开干·送审·打回·收工）——
    它走的是与 `loomerto block set` / `task set` **完全同一份实现**（`edits.set_status`）+ 枚举限制 + `rev` 冲突检查，
-   不会两处漂；而「删块」「跨泳道移动」「改依赖接线」仍然不做（那会改块 id 或一脚踩坏判据，留命令层）。
+   不会两处漂；而「删块」「删任务」「直接改依赖接线」仍然不做（那会一脚踩坏判据或接线 —— 跨泳道换任务
+   是把 id 与引用**一次改对**，与「手改接线」不是一回事），留命令层。
 3. **R-06 的服务边界**：本地 web 服务只绑 127.0.0.1、纯 stdlib（`http.server`），还是要能被别的机器访问？
    我建议**先只绑本机**，跨机器走 `file://` 共享目录或让每个 harness 读同一份 json。

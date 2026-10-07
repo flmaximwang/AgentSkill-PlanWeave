@@ -1,6 +1,6 @@
 # `loomerto` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `d47d2ed`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `__MERGE_SHA__`）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -8,7 +8,7 @@
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
 > for c in "plan new" "task new" \
 >          "task set" "task rm" "task show" \
->          "block new" "block insert" "block set" "block describe" "block assign" \
+>          "block new" "block insert" "block set" "block describe" "block assign" "block move" \
 >          "block expand" "block collapse" "block rm" "block show"; do loomerto $c --help; done
 > ```
 
@@ -42,7 +42,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
   - 两个都给时**按 `--plan` 算**（打一行 ⚠）。**全局旗标必须写在子命令之前**（写后面会被当成未知参数）；
     `--no-render` = 只改数据不刷视图。
 - **文件模式的位置参数左移一位**：命令的第一个位置参数本来是 `slug`，给了 `--plan` 就不写它 ——
-  `block set <slug> <ref> <status>` → `<ref> <status>`、`block show|rm|expand|collapse|insert <slug> <ref>` → `<ref>`、
+  `block set <slug> <ref> <status>` → `<ref> <status>`、`block show|rm|insert|move|expand|collapse <slug> <ref>` → `<ref>`、
   `task set <slug> <ref> <status>` → `<ref> <status>`、`task show|rm <slug> <ref>` → `<ref>`、
   `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
   `plan new` / `task new` / `block new`）文件模式下**不写位置参数**。多写一个（如
@@ -94,6 +94,20 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 ### `block rm` — 真删一个块（取消 ≠ 删除）
 `py block rm <slug> <块ref> [--note "为什么删"] [--force]`
 - 被别的块当依赖/评审对象时**默认拒删**（列出是哪些块，`--force` 才删）。
+- 删**块**不会自动重接引用：`--force` 留下的 `deps` / `review_of` 会变成悬空（`check` 会报）。
+  只想把块换个地方就先用 `block move`（它会把引用一起改对）。
+
+### `block move` — 把一个块换到另一条任务（泳道）
+`py block move <slug> <块ref> --task T-00N [--index N] [--note "为什么移"]`
+- 块的 id 是 `T-00N#B-00N`（**位置即身份**），所以换泳道 = **换 id**（在目标任务里取最小空位）+
+  把**引用旧 id 的接线全部重接**：别的块写进 `deps` / `review_of` 的，以及别的任务的 `expanded_from.block`。
+  历史字段（`folded_from` / `runs[].block`）是记录，不动。
+- `--index N` = 插到目标任务的第几位（0 起）；不给就追加到末尾。**同一条任务内**（`--task` 给的是它自己）
+  只改先后，此时 id 与接线都不动 —— 等价 `reorder`，画布上的同泳道拖动走的就是这条。
+- **成环则拒改，且一个字都不写**（与 `block expand` / `block collapse` 同一道闸）。最容易踩的一种：目标任务的
+  任务级 `deps` 在块搬进来后会落到它身上，而源任务里正好有块等它 —— 报错会点名是哪条任务级依赖。
+- 源任务被搬空**不删任务**（空泳道留着）；删任务走 `task rm`。
+- 命令会打印换了什么：新 id、哪些块改等它、目标任务的任务级依赖从此算它的前置、源任务是否空了。
 
 ### `task rm` — 真删一条任务（连同它的块）
 `py task rm <slug> <任务ref> [--note "为什么删"] [--force]`

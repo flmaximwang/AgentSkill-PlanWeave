@@ -28,10 +28,11 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
 │   │                **唯一写入漏斗 commit(slug, plan)**
 │   ├── render.py    plan.json → PLAN.md / plan.canvas / plan.html，**只返回字符串**（写盘归 store）
-│   ├── edits.py     **改动的唯一实现**：改状态 / 改字段 / 加任务 / 加块 / 重排 —— CLI 与画布共用
+│   ├── edits.py     **改动的唯一实现**：改状态 / 改字段 / 加任务 / 加块 / 重排 / 移块 —— CLI 与画布共用
 │   ├── serve.py     `loomerto open` 的画布服务（http.server，只绑 127.0.0.1，写回同一个 commit）
 │   ├── workers.py   子代理线程探活：读转录 + manifest.json，给七种结论
-│   └── cli.py       argparse + 12 个一级命令（`plan` / `task` / `block` 是分组，动作都在二级）+ 中文输出。
+│   └── cli.py       argparse + 12 个一级命令（`plan` / `task` / `block` 是分组，动作都在二级；
+│                    共 23 个叶子命令）+ 中文输出。
 │                    **唯一允许 print、唯一决定退出码的地方。**
 ├── skills/                           随包发布的 skill（装进 Hermes profile 的是这一层）
 │   └── plan-weave/maintain-a-shared-plan/
@@ -96,22 +97,33 @@ store.commit("my-plan", plan)            # 写 = 落 json + 同步三视图（�
 for t, b in model.all_blocks(plan): ...  # 算（派生状态一律用 model 的函数，别自己实现一份）
 ```
 
-- **人在画布上改**（R-02）：前端把改动写成一次 `op`（edit / status / task / block / reorder），
-  带上自己读到的 `rev`；服务端比对 `updated_at`，对不上回 409 —— 不要另存一份状态、不要自己合并。
+- **人在画布上改**（R-02）：前端把改动写成一次 `op`（edit / status / task / block / reorder / move），
+  带上自己读到的 `rev`；服务端比对它，对不上回 409 —— 不要另存一份状态、不要自己合并。
+  **结构演算全在 `edits` 里**（`reorder` 只改先后、`move` 换 id + 重接引用 + 查环），前端不实现第二份。
 - **多 plan 切换**（R-06）：`plans_root()` 下每个 `<slug>/plan.json` 就是一个 plan；
   一个 `open` 服务只服务一份（想要一览就在外层做「每个 slug 起一个/换 target 重开」）。
 - **绑定与暴露**：服务只绑本机回环地址、纯 stdlib；跨机器不要开端口，让每台机器读同一份 json。
 
-## 7. 开发与验收（本机实测有效的四道闸）
+## 7. 开发与验收（本机实测有效的五道闸）
 
 1. **名字自检**：机械搬迁/新增分支后，先静态查「用到的名字是否都能解析」（拆分那轮抓到 3 处漏 import：
    `re` / `json` / 一个漏改的 `die`），比一条条跑命令看 `NameError` 快，也不漏未覆盖的分支。
 2. **对拉**：新代码与改动前的版本（`git show <旧 sha>:<路径>`）对同一串命令比 stdout / stderr / 退出码，
    再比产出的 `plan.json` / `PLAN.md` / `plan.canvas` / `plan.html`。
+   **跑另一份 checkout 的代码时别被 cwd 顶掉**：`python3 -m loomerto` 把**当前目录**放在 `sys.path` 最前，
+   站在 main 的目录里给 `PYTHONPATH=<worktree>` 跑的其实是 main 那份 —— 对拉会变成自己跟自己比
+   （跨泳道拖动这轮踩过：11 份 plan 的「0 处差异」是假的）。要么 `cd` 到那份 checkout，要么在**没有
+   `loomerto/` 目录**的地方跑；并且**先证明跑的是哪一份**（两边 `--help` 的子命令表必须不同）。
 3. **真数据只读回归**：拿装好的那份对真实 plans 跑只读命令（`list` / `workers` / `check`）。
 4. **install 回读**：`uv tool install --editable .` 后从**任意目录**跑 `loomerto --plans-root <某个库> list`
    与 `loomerto --plan <某个 plan 数据文件> current`，确认包数据（模板）与两种定位方式都对；
    skill 侧再跑一次薄壳（模拟「装进 profile」的那条路）。
+5. **画布/前端改动要在真浏览器里真拖一次**（2026-10-07 跨泳道拖动这轮定）：用 checkout 起
+   `python3 -m loomerto --plan <测试文件> open --port <N>`，在页面里派发真的 `DragEvent`（带 `DataTransfer`）
+   走完 dragstart → dragover → drop，再回读页面状态与磁盘 `plan.json`。这一轮靠它抓到两个只在浏览器里
+   才现形的 bug：① 前端把「目标泳道 id」当块 id 去查表 → drop 静默什么都不做（服务端日志干净、CLI 全绿）；
+   ② `_apply` 改成返回二元组后 `reorder`（同泳道拖）撞 `KeyError: 'ref'`。
+   **改页面资产不用重启服务，改 `serve.py` 必须重启** —— 前者每次 `GET /` 都从磁盘重读，后者是已加载的模块。
 
 ```bash
 # 本机（macOS，系统 python3 是 3.9.6；旧 pip 装不了 editable，所以用 uv）

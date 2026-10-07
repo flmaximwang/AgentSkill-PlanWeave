@@ -306,6 +306,78 @@ def insert_block(plan: dict, anchor_ref: str, *, before: bool = True, title: str
     return task, nb, rewired, where
 
 
+def move_block(plan: dict, ref: str, to_task_ref: str, *, index=None, note: str = "",
+               actor: str = "agent"):
+    """把一个块移到**另一条任务**（泳道）里 —— 画布上的跨泳道拖动走这条。
+
+    块的 id 是 `T-00N#B-00N`（**位置即身份**），所以「换泳道」比「换先后」多两件事：
+    换成一个新 id（在目标任务里取最小空位），并把**引用旧 id 的接线全部重接** ——
+    别的块把它写进 `deps` / `review_of` 的，以及别的任务的 `expanded_from.block`。
+    历史字段（`folded_from` / `runs[].block`）是记录，不动。
+
+    `index` = 插到目标任务的第几位（0 起，默认追加到末尾）；同一条任务内则只改先后
+    （等价 `reorder_blocks`，此时 id 与接线都不动）。
+
+    返回 `(block, notes)`：`notes` 是给人看的几行（换了 id / 谁改等它 / 空泳道提醒）。
+    **前后关系会成环时抛 `PlanError`** —— 与 `expand` / `collapse` 一样，调用方必须在
+    拿到返回之后才 `commit()`（抛错时内存里的 dict 已经是脏的，别落盘）。
+    """
+    src, block = find(plan, ref)
+    if block is None:
+        raise PlanError(f"{ref} 是任务不是块 —— move 作用于块（T-001#B-002 或 B-002）；"
+                        f"要把整个任务挪走，先 `block expand` / `block collapse` 调整粒度")
+    dst, _ = find(plan, to_task_ref)
+    old = block["id"]
+    if dst["id"] == src["id"]:                     # 同一条泳道：只改先后
+        rest = [b["id"] for b in src["blocks"] if b["id"] != old]
+        at = len(rest) if index is None else max(0, min(int(index), len(rest)))
+        reorder_blocks(plan, src["id"], rest[:at] + [old] + rest[at:])
+        return block, [f"留在 {src['id']} 里，只改了先后（第 {at + 1} 位）"]
+
+    new = next_block_id(plan, dst)
+    block["id"] = new
+    notes = [f"id 换成 {new}（块 id 就是它的位置，换泳道就换 id）"]
+    rewired = []
+    for _t, b in all_blocks(plan):
+        if b is block:
+            continue
+        hit = False
+        if old in deps_of(b):
+            b["deps"] = [new if d == old else d for d in b["deps"]]
+            hit = True
+        if b.get("review_of") == old:
+            b["review_of"] = new
+            hit = True
+        if hit:
+            rewired.append(b["id"])
+    for t in plan["tasks"]:                        # 展开记录里那个块 id 也是活的引用
+        ef = t.get("expanded_from")
+        if ef and ef.get("block") == old:
+            ef["block"] = new
+    if rewired:
+        notes.append("改等它的块：" + "、".join(rewired) + "（deps / review_of 已重接）")
+
+    src["blocks"] = [b for b in src["blocks"] if b is not block]
+    at = len(dst["blocks"]) if index is None else max(0, min(int(index), len(dst["blocks"])))
+    dst["blocks"].insert(at, block)
+
+    try:
+        guard_acyclic(plan, f"把 {old} 移到 {dst['id']}")
+    except PlanError as e:
+        hint = (f"\n  {dst['id']} 的任务级依赖（{'、'.join(dst['deps'])}）在块搬进来后会落到它身上"
+                " —— 换个落点，或先解开那条任务级依赖" if dst.get("deps") else "")
+        raise PlanError(str(e) + hint) from e
+    if dst.get("deps"):
+        notes.append(f"⚠ {dst['id']} 的任务级依赖（{'、'.join(dst['deps'])}）从此也算这块的前置"
+                     " —— 它可能会退回「等前置」")
+    if not src["blocks"]:
+        notes.append(f"⚠ 源任务 {src['id']} 现在一个块都没有了（空泳道留着；删任务走 `task rm`）")
+    log_event(plan, "move", f"{old} 移到 {dst['id']}（新 id {new}，第 {at + 1} 位）"
+              + (f"；重接接线 {len(rewired)} 处：{'、'.join(rewired)}" if rewired else "")
+              + (f"（{note}）" if note else ""), actor=actor, ref=new)
+    return block, notes
+
+
 def reorder_blocks(plan: dict, task_ref: str, order):
     """把一条任务里的块按 `order`（块 id / 块内后缀都行）重排 —— 画布上拖块排序用。
 

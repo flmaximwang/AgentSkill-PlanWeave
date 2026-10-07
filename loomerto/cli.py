@@ -1,4 +1,4 @@
-"""CLI 层：argparse + 22 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
+"""CLI 层：argparse + 23 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
 `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 是单层），
 动作一律放到二级（`block set` / `task rm`…）。唯一允许 print 与决定退出码的地方。
 
@@ -282,6 +282,21 @@ def cmd_task_rm(a):
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=task["id"])
     commit(a.slug, plan, a)
     print(f"✓ 已删除任务 {task['id']}（含 {n} 个块）")
+
+def cmd_block_move(a):
+    """把一个块移到**另一条任务**（泳道）—— 画布上的跨泳道拖动走同一条 `edits.move_block`。
+
+    换泳道 = 换块 id + 把引用旧 id 的 `deps` / `review_of` 全部重接；成环则拒改（什么都不写）。
+    """
+    plan = load(a.slug)
+    block, notes = edits.move_block(plan, a.ref, a.task, index=a.index,
+                                    note=a.note, actor=a.actor)
+    commit(a.slug, plan, a)
+    print(f"✓ {a.ref} → {block['id']}")
+    for n in notes:
+        print(f"    {n}")
+    return 0
+
 
 def cmd_block_expand(a):
     """把一个块（B）展开成一个任务（T）：原块成为第一步，--step 依次追加后续步骤。
@@ -919,7 +934,7 @@ def _parser() -> argparse.ArgumentParser:
 
     # —— block 组：任务里的块（状态、文档、结构都落在这）
     g = sub.add_parser("block",
-                       help="块：new / insert / set / describe / assign / expand / collapse / rm / show"
+                       help="块：new / insert / set / describe / assign / move / expand / collapse / rm / show"
                        ).add_subparsers(dest="sub", required=True)
     p = g.add_parser("new", help="往一条任务末尾加块（文档）")
     p.add_argument("slug", nargs="?", default="")
@@ -1001,6 +1016,16 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_block_assign, shift=["ref"])
 
+    p = g.add_parser("move", help="把一个块移到另一条任务（泳道）：换块 id + 重接依赖接线（成环则拒改）")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="要移的块：T-001#B-002 或 B-002")
+    p.add_argument("--task", required=True, help="落到哪条任务（泳道）：T-003")
+    p.add_argument("--index", type=int, default=None,
+                   help="插到该任务的第几位（0 起；默认追加到末尾）")
+    p.add_argument("--note", default="", help="为什么移（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_move, shift=["ref"])
+
     p = g.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="要展开的块：T-001#B-002 或 B-002")
@@ -1055,7 +1080,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("text", nargs="?", default=None)
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
-                            "block", "status", "insert", "assign", "remove",
+                            "block", "status", "insert", "assign", "remove", "move",
                             "expand", "collapse"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
