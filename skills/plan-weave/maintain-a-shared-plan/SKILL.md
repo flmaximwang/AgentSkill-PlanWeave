@@ -38,9 +38,10 @@ metadata:
 $P = ~/.hermes/profiles/plan-weave/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
 ```
 
-纯 stdlib，可直接 `python3 "$P" ...`。入口是**薄壳**（`scripts/plan.py`），实现在同目录的
-`scripts/planweave/` 包里：`model`（模型/派生，纯函数）/ `store`（磁盘 + 唯一写入漏斗 `commit()`）/
-`render`（三视图）/ `workers`（线程探活）/ `cli`（唯一 print 与退出码）。
+纯 stdlib，可直接 `python3 "$P" ...`。入口是**薄壳**（`scripts/plan.py`），实现在同目录的 planweave 包里：
+`scripts/planweave/model.py`（模型与派生，纯函数）/ `scripts/planweave/store.py`（磁盘 + 唯一写入漏斗
+`commit()`）/ `scripts/planweave/render.py`（三视图）/ `scripts/planweave/workers.py`（线程探活）/
+`scripts/planweave/cli.py`（唯一 print 与退出码）。
 **别的 harness 不必走命令行**：`from planweave import store` 就能读写同一份 plan.json（跨 harness 约定见
 `scripts/planweave/__init__.py`）。
 
