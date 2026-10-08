@@ -148,6 +148,8 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
   一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
   要往**中间**插一步（不是追加到末尾）用 `block insert <锚块> [--before|--after]`，它同样把接线改对。
+  **接线事后要改**（不是加/删整块）用 `block deps <块ref> --add/--rm/--deps`：依赖必须**已经存在**、
+  引用当场规整去重、改完**查环**（成环退 2 且一个字不写）；`--deps` 给空即清空前置。
 - **实现**在仓库根的 `loomerto/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
   [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 

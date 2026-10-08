@@ -5,7 +5,8 @@
 
 > 最后对齐：2026-10-08 · **main 上的代码基线 `e2ecdc2`**（R-18 的代码 `5656229` **已合入 main** ——
 > 本文件头一版写的「未合入」已作废）；**B 档「块的形状收口」落在分支 `feat/block-schema`（`f9b91b0`），
-> 还没合进 main**；default profile 里的 skill 副本已按 B 档拉平（见 §4 末尾的拉平记录），
+> 还没合进 main**；**R-22「改块依赖」落在分支 `feat/block-deps`（`0e153a1`，从 `feat/block-schema` 起 ——
+> 它的上下文是 B 档那份 `edits.py`），也没合进 main**；default profile 里的 skill 副本已按 B 档拉平（见 §4 末尾的拉平记录），
 > `plan-weave` profile 那份仍是旧一代，待随该 bot 退役一并清。
 > 变更纪律：需求条目只在**用户明确说了**或**用户拍板**之后才增删；实现状态变了改「现状」列，不新开一份。
 
@@ -44,7 +45,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | # | 需求（用户原话的意思） | 现状（代码里真有的） | 状态 |
 |---|---|---|---|
 | **R-01** | 每个节点要表明**谁认领了 / 谁在做**，并能给出**具体的子代理线程**，以便检查子代理是否正常 | `block.owner`（认领人）+ `block.exec`（`by`/`delegation`/`task_index`/`transcript`/`started`）+ 命令 `block set`（`--by`）/ `task set`、`workers`（七值，⚠/❌ 退 1）；三视图都显示「@认领人→@在做的人」与线程路径。SKILL.md 有专节 | 已落地 `3d774bd` |
-| **R-02** | **人与 AI 双向对齐**：用户可以直接在画布上改 plan（改完自动同步 json 与 md）；AI 通过命令改 json 并同步 md 与画布。目的是不必用语言描述复杂流程 | **已落地**：`loomerto open <plan 数据文件>` 起本地服务（只绑 `127.0.0.1`、纯 stdlib），画布上可改 块的标题/做什么/判据/认领人/类型/**状态**、新建任务与新建块、拖动卡片改同泳道先后、**拖到别的泳道 = 换任务**（R-16）；每次改动走 `edits`（唯一实现）→ `store.commit()`，所以 json 与 `PLAN.md`/`plan.html`/`plan.canvas` 同时更新；前端带 `rev`（= `updated_at`），过期回 **409** 不自动合并。协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md)。**故意不做**：删块/删任务、直接改 `deps`/`review_of`（会一脚踩坏判据或接线 ⇒ 走 `block rm` / `block move` / `block expand` / `block collapse`） | 已落地 |
+| **R-02** | **人与 AI 双向对齐**：用户可以直接在画布上改 plan（改完自动同步 json 与 md）；AI 通过命令改 json 并同步 md 与画布。目的是不必用语言描述复杂流程 | **已落地**：`loomerto open <plan 数据文件>` 起本地服务（只绑 `127.0.0.1`、纯 stdlib），画布上可改 块的标题/做什么/判据/认领人/类型/**状态**、新建任务与新建块、拖动卡片改同泳道先后、**拖到别的泳道 = 换任务**（R-16）；每次改动走 `edits`（唯一实现）→ `store.commit()`，所以 json 与 `PLAN.md`/`plan.html`/`plan.canvas` 同时更新；前端带 `rev`（= `updated_at`），过期回 **409** 不自动合并。协议 = [`docs/canvas-sync.md`](docs/canvas-sync.md)。**故意不做**：删块/删任务、直接改 `deps`/`review_of`（会一脚踩坏判据或接线 ⇒ 走 `block rm` / `block move` / `block expand` / `block collapse`）；**命令层**后来按用户要求补了 `block deps`（R-22），画布上仍然不做 | 已落地 |
 | **R-03** | AI 能用 CLI 做节点级结构编辑：**在某个节点之后 / 两个节点之间 / 最早的节点之前插入节点**；**删除节点**；**把一个节点拆成一个任务流程** | 拆成任务流程 = `block expand`（块→任务，含后续 `--step`）；删除 = `block rm`（块）/ `task rm`（任务，连带它的块）；**定点插入 = `block insert`**（`--before` / `--after`：插到锚块之前时新块接手锚块原来等的东西、锚块改成只等新块；插到之后时原来等锚块/评审锚块的改成等新块）—— 「两节点之间」= 插到后一个之前，「最早节点之前」= 插到该任务第一个块之前；成环报错且一字不写，`--dry-run` 只改内存副本 | 已落地 `d47d2ed` |
 | **R-04** | CLI 能快速改状态，但**带约束**：改为「已认领」必须附上**被谁认领**；改为「进行中」必须附上**主代理或子代理 pid** | `block set … --by` 会写 `exec.by`（认得人是谁），同一句里 `--delegation` / `--task-index` / `--transcript` 认得线程与转录；**状态已会卡参数**（在途状态才收线程登记、产物只在 done 收），但**没有强制校验**（`--by` 仍可省、也无 pid 字段，改为 claimed/running 时不缺信息也能过）。2026-10-08 起 `check` 会盯住这条的镜像面：「已认领 / 进行中 / 待评审 却没有负责人」发 ⚠（R-18）—— 仍是告警，不是硬校验 | 待做 |
 | **R-05** | 每个项目要先登记**协作者**（人类 / agent），节点必须派给协作者中的一员 | `plan new --owner "id=kind:label[@channel]"` 写 `participants`，`block new --owner` / `block assign --to` 只是个自由字符串（assign 会在 id 不在名单里时打一行 ⚠）；**不校验** owner 是否在 participants 里，也不强制「先有协作者」 | 部分 |
@@ -68,6 +69,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-20** | **C 档：块的只读轻量包装类 `Block`**（叠在 `BLOCK_FIELDS` 之上，只给读的一侧用） | **待做**：见 [issue #1](https://github.com/flmaximwang/Loomerto/issues/1)。范围先划死 —— 只读属性代理 + `to_dict()`，**不提供 setter**、不承担不变式；写入仍只走 `edits.*`，`plan.json` 结构不变。之所以单开一档：`loomerto/*.py` 里有 ~155 处直接摸块字典，且要过 `canvas-sync` 的 op 与两个前端的 `GET /api/plan` 这两条跨 JSON 边界 | 待做（issue #1） |
 | **R-21** | **D 档：`plan`/`task`/`block` 变成对象图（ORM 式）**，dict 只出现在序列化时 | **待做 / 不排期**：见 [issue #2](https://github.com/flmaximwang/Loomerto/issues/2)。与三条硬约束正面冲突：`plan.json` 是唯一真相且协议就是 JSON（两个前端各有一份内联 JS 直读键）、块的 id 就是位置（`move_block` 靠它换号重接）、零依赖 + `>=3.9`（`dataclass` 可以，`pydantic`/`attrs` 不行）。真要做先想清楚 issue 里列的四件事 | 待做（issue #2） |
 
+| **R-22** | **「loomerto block 现在没有修改块依赖的功能，添加一下」**（2026-10-08 · 用户原话） | **新增 `block deps <块ref>`**：`--deps <一串>` **整组替换**（给空 = 清空前置）、`--add` / `--rm` 加减 —— 三种改法只能选一种，一个都不给退 2。三道闸收在 `edits.set_deps` **一处**（命令层只管参数，将来任何前端共用）：① 每条依赖必须**已经存在**（悬空依赖 `check` 会一直报错，块挂在那儿永远等不到）——依赖写成任务（`T-002`）也拒（块只能等另一个块）；② 引用当场**规整成规范 id 并去重**（`B-003` → `T-002#B-003`）；③ 改完**查环**，成环抛 `PlanError` ⇒ 不 `commit()`、**一个字都不写**（与 `move` / `insert` / `expand` / `collapse` 同一纪律）。`--rm` 一条本来就不等的 ⇒ **退 2**，不许静默成功。改完打两行 ⚠（按需）：所属任务的**任务级**依赖也算它的前置；新等上的块是 `cancelled`（永远不会 done ⇒ 这块一直「等前置」）。日志 `kind=deps`（`note --kind` 也收它）。**画布上仍然不做**（R-02 的「故意不做」不变：手改接线会一脚踩坏图）。**验收**：文件模式 + 库模式逐条跑完 24 个叶子命令、9 条负例（自指 / 不存在 / 写成任务 / `--deps`+`--add` 同给 / 什么都不给 / ref 是任务 / 找不到对象 / 成环 / 无变化）、真实 11 份 plan × 7 条只读命令与改动前**逐条对拉 77/77 逐字节相同** | 已落地 `0e153a1`（分支 `feat/block-deps`） |
+
 ## 3. CLI 现状（摘要，细节见 `docs/cli-reference.md`）
 
 12 个一级命令（`plan` / `task` / `block` 是**分组**，动作都在二级；其余 8 个是单层动作）+ 3 个别名
@@ -77,7 +80,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 - **`task`**：`new`（任务线）｜`set`（任务状态；在途时才登记在做的人与线程）｜`rm`（真删任务，连带它的块）｜
   `show`（一条任务的详情，只读）
 - **`block`**：`new`（追加到任务末尾）｜`insert`（插到某块之前/之后，接线自动改对）｜`set`（改状态 + 谁在做 + 子代理线程）｜
-  `describe`（改详情，留日志）｜`assign`（把块指派给某个参与方）｜`move`（换泳道：换 id + 重接引用 + 查环）｜
+  `describe`（改详情，留日志）｜`assign`（把块指派给某个参与方）｜`deps`（**事后改前置依赖**：`--deps` 整组替换 /
+  `--add` / `--rm`，查存在性·自指·环）｜`move`（换泳道：换 id + 重接引用 + 查环）｜
   `expand`（块→任务流程）｜`collapse`（任务→块）｜`rm`（真删块，被引用时默认拒删）｜`show`（**一个**块的详情，只读）
 - **单层**：`note`（写日志）｜`current`（现在该谁动）｜`check`（图质量，有错退 1）｜
   `workers`（线程还在动吗，⚠/❌ 退 1）｜`render`（重渲 md/html/canvas）｜`digest`（提醒文本）｜`list`｜
@@ -91,8 +95,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 
 | 缺口 | 落在哪 |
 |---|---|
-| R-02 画布写回的**剩余部分**（删块、删任务、直接改 `deps`/`review_of`） | 协议与冲突规则已写定（[`docs/canvas-sync.md`](docs/canvas-sync.md)）。**跨泳道移动已落地**（R-16）：结构演算在 `edits.move_block`（换 id + 重接 `deps`/`review_of` + 查环），CLI（`block move`）与画布共用。剩下的「删块 / 删任务」要在**界面口径**上先想清楚（`block rm` 会检查谁引用它、被引用时要人点头），「改依赖接线」是结构不是字段 —— 两者都留命令层 |
-| R-04 状态约束 / R-05 协作者校验 | **改动现在只有一份实现**（`edits.py`）：加一个 `validate(plan, who, what)` 在 `set_status` / `add_block` / `add_task` 入口处调用即可 —— 命令与画布同时受约束，不必动 23 个叶子命令 |
+| R-02 画布写回的**剩余部分**（删块、删任务、直接改 `deps`/`review_of`） | 协议与冲突规则已写定（[`docs/canvas-sync.md`](docs/canvas-sync.md)）。**跨泳道移动已落地**（R-16）：结构演算在 `edits.move_block`（换 id + 重接 `deps`/`review_of` + 查环），CLI（`block move`）与画布共用。剩下的「删块 / 删任务」要在**界面口径**上先想清楚（`block rm` 会检查谁引用它、被引用时要人点头）；「改依赖接线」已有命令层入口 **`block deps`**（R-22，含查环），画布上仍不做 |
+| R-04 状态约束 / R-05 协作者校验 | **改动现在只有一份实现**（`edits.py`）：加一个 `validate(plan, who, what)` 在 `set_status` / `add_block` / `add_task` 入口处调用即可 —— 命令与画布同时受约束，不必动每一条叶子命令 |
 | R-06 多 plan 切换 | 服务层已在 `serve.py`（只 import `store` + `edits` + `model`）；要一览就照 `cmd_list` 的路子遍历 `plans_root()` 下每个 `<slug>/plan.json`。**不许在服务里另存状态** |
 | R-19 顺带给 `check` 补一条「块形状」硬校验（缺键 / 类型不对 ⇒ ✗ 退 1） | 落点 = `cli.cmd_check`：`model.normalize_block` 只补不改，所以「缺什么」要**在补之前**读（`store.load()` 已经补过了 ⇒ 校验得改成读原始文件，或让 `load()` 把「补了哪些键」带出来）。**难度在这**：`load()` 现在是无返回值地补齐，`check` 想报「这份 plan 的哪几个块缺键」就得先想清这条信息怎么传（不建议让 `list`/`current` 这些只读命令也跟着报）。B 档只做收口，这条留待拍板 |
 | R-20 C 档 / R-21 D 档 | 都已开 issue（[#1](https://github.com/flmaximwang/Loomerto/issues/1) / [#2](https://github.com/flmaximwang/Loomerto/issues/2)）；真要做时落点都在 `model`（形状与派生之上），**不动 `plan.json` 结构、不动 `canvas-sync` 协议** |
@@ -101,6 +105,12 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 `skills/plan-weave/check-plan-node-commands/SKILL.md` 是**发布源**；default profile 里装的副本在
 `~/.hermes/skills/loomerto/<同名目录>/`，改完 `cp` 过去再 `diff -rq`（除 `.DS_Store` 外应为空）。
 `plan-weave` profile 那份（`~/.hermes/profiles/plan-weave/skills/plan-weave/`）是旧一代，**不动**。
+
+**R-22 的拉平（2026-10-08）**：`block deps` 那几段在**两份都改了**（仓库源 + `~/.hermes/skills/loomerto/maintain-a-shared-plan/SKILL.md`）
+—— 没有整份 `cp`：default profile 的副本目前**另有会话写进去的段落**（约 100 行：`--no-render` 收尾、并行建块、
+`--artifact` 一串写法等），仓库源还没有那份回移植。所以这一轮的拉平是「同一段改动分别打在两份上」，
+`diff -rq` **不为空是预期的**，别拿它当漏改的判据（用 `grep -c "block deps"` 两份都该有：仓库源 4 处、profile 副本 6 处
+—— 多出的两处是副本先行段落里的同段改写）。
 
 **R-10 的一个边界（在此写定，免得日后反复问）**：默认 `blocked` 只管**显式建块**（`block new` / `block insert`）；
 `block expand --step` 追加的步骤留在 `pending` —— 它是「已经批过的那条活」的后续步骤，不是新提议。
@@ -117,7 +127,8 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 2. **R-02 的写回边界**（**已落地**，含后来补的 R-16）：位置与结构 = 拖拽改同泳道先后 + 跨泳道换任务；
    字段编辑 = 标题/做什么/判据/认领人/类型；**另加了「改状态」**（认领·开干·送审·打回·收工）——
    它走的是与 `loomerto block set` / `task set` **完全同一份实现**（`edits.set_status`）+ 枚举限制 + `rev` 冲突检查，
-   不会两处漂；而「删块」「删任务」「直接改依赖接线」仍然不做（那会一脚踩坏判据或接线 —— 跨泳道换任务
-   是把 id 与引用**一次改对**，与「手改接线」不是一回事），留命令层。
+   不会两处漂；而「删块」「删任务」仍然不做（那会一脚踩坏判据或接线），留命令层。「改依赖接线」原先也不做，
+   2026-10-08 用户要求后落成命令层入口 **`block deps`**（R-22：三条闸 + 查环，成环一个字不写）；
+   跨泳道换任务是把 id 与引用**一次改对**，与「手改接线」不是一回事。
 3. **R-06 的服务边界**：本地 web 服务只绑 127.0.0.1、纯 stdlib（`http.server`），还是要能被别的机器访问？
    我建议**先只绑本机**，跨机器走 `file://` 共享目录或让每个 harness 读同一份 json。

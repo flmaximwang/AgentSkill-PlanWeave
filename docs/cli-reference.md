@@ -1,8 +1,9 @@
 # `loomerto` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `f9b91b0`，分支
-> `feat/block-schema` —— **命令面一个字没动**；这一版动的是「块的形状怎么声明」（`model.BLOCK_FIELDS`
-> + `new_block()` + `normalize_block()`，见 [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-19）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `0e153a1`，分支
+> `feat/block-deps` —— 这一版只加了**一条命令 `block deps`**（事后改块的前置依赖，见
+> [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-22）；命令面其余部分与 `f9b91b0`（分支 `feat/block-schema`，
+> 动的是「块的形状怎么声明」：`model.BLOCK_FIELDS` + `new_block()` + `normalize_block()`，R-19）逐字节相同）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -10,7 +11,7 @@
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
 > for c in "plan new" "task new" \
 >          "task set" "task rm" "task show" \
->          "block new" "block insert" "block set" "block describe" "block assign" "block move" \
+>          "block new" "block insert" "block set" "block describe" "block assign" "block deps" "block move" \
 >          "block expand" "block collapse" "block rm" "block show"; do loomerto $c --help; done
 > ```
 
@@ -44,7 +45,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
   - 两个都给时**按 `--plan` 算**（打一行 ⚠）。**全局旗标必须写在子命令之前**（写后面会被当成未知参数）；
     `--no-render` = 只改数据不刷视图。
 - **文件模式的位置参数左移一位**：命令的第一个位置参数本来是 `slug`，给了 `--plan` 就不写它 ——
-  `block set <slug> <ref> <status>` → `<ref> <status>`、`block show|rm|insert|move|expand|collapse <slug> <ref>` → `<ref>`、
+  `block set <slug> <ref> <status>` → `<ref> <status>`、`block show|rm|insert|move|expand|collapse|deps <slug> <ref>` → `<ref>`、
   `task set <slug> <ref> <status>` → `<ref> <status>`、`task show|rm <slug> <ref>` → `<ref>`、
   `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
   `plan new` / `task new` / `block new`）文件模式下**不写位置参数**。多写一个（如
@@ -76,8 +77,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - **`--status` 默认 `blocked`（=待批准，等有人点头）**：只有 AI 判断这块无需审批就能干，才显式给
   `--status pending`。`block expand --step` 追加的步骤不在此列 —— 它们是「已经批过的那条活」的后续，仍是 `pending`。
 - `doc`（做什么）与 `done_when`（**可核验**的判据）是块的本体；没有判据的块不许建。
-- 要插在**中间**（不是追加到末尾）用 `block insert`；块的 `deps` 事后要改只有
-  `insert` / `expand` / `collapse` / `rm` 重建四条路。
+- 要插在**中间**（不是追加到末尾）用 `block insert`；块的 `deps` 建好之后要改走 **`block deps`**（见下）。
 
 ## 2. 结构编辑
 
@@ -182,8 +182,23 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - `--to` 不在 `plan.json` 的 `participants` 里时**打一行 ⚠ 照记**（R-05 的强制校验还没做）；
   块的「在做的人」与认领人不一致时再打一行 ⚠（换在做的人走 `set … <在途状态> --by`）。
 
+### `block deps` — 改一个块的**前置依赖**（接线，不是字段）
+`py block deps <slug> <块ref> [--deps <ref…> | --add <ref…> | --rm <ref…>] [--note "为什么改"]`
+- 三种改法**只能选一种**：`--deps` 整组替换（**给空 = 清空前置**，即谁都不等）、`--add` 加几条
+  （已在里面的跳过）、`--rm` 去掉几条。`--deps` 与 `--add` / `--rm` 同给退 2；一个都不给也退 2。
+- 三道闸（都在 `edits.set_deps` 一处，命令与将来任何前端共用）：
+  ① **每条依赖必须已经存在**（悬空依赖 `check` 会一直报错；把块挂在那儿永远等不到）——
+  依赖写成任务（`T-002`）也拒（块只能等另一个块；要等一整条任务就把它写成任务级依赖）；
+  ② 引用当场**规整成规范 id 并去重**（`B-003` → `T-002#B-003`）；
+  ③ 改完**查环**：成环退 2，且**一个字都不写**（与 `block move` / `insert` / `expand` / `collapse` 同一纪律）。
+- `--rm` 一条本来就不等的 = 什么都没变 ⇒ **退 2**（不许静默成功：那说明 ref 或对象写错了）。
+- 改完打一行 `✓ <块> 的前置：旧 → 新`，另有两行 ⚠ 按需出现：新等上的块是 `cancelled`（它不会变 done，
+  这块会一直「等前置」）、所属任务有**任务级**依赖（那几条也算它的前置，`block show` 里标「任务级」）。
+- 改动记进日志（`kind=deps`）；状态 / 认领 / 详情一概不动（那是 `set` / `assign` / `describe` 的事）。
+  换泳道仍走 `block move`、换粒度走 `expand` / `collapse`（它们顺手重接接线）。
+
 ### `note` — 写一条总结/决定进日志
-`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|insert|assign|remove|expand|collapse] [--ref T-00N#B-00N] [--actor 谁]`
+`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|insert|assign|deps|remove|expand|collapse] [--ref T-00N#B-00N] [--actor 谁]`
 
 ## 4. 看
 
