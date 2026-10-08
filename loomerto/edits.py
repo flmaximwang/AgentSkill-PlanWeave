@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find,
+from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find, find_soft,
                     guard_acyclic, log_event, new_block, next_block_id, next_ids, now)
 
 TASK_STATUS = ["pending", "running", "done", "blocked", "cancelled"]
@@ -242,6 +242,58 @@ def assign_block(plan: dict, ref: str, who: str, *, note: str = "", actor: str =
               + (f"（原 {old}）" if old else "")
               + (f"（{note}）" if note else ""), actor=actor, ref=block["id"])
     return block, old
+
+
+def set_deps(plan: dict, ref: str, *, deps=None, add=(), rm=(), note: str = "", actor: str = "agent"):
+    """改一个块的**前置依赖**：`deps` 整组替换（`[]` = 清空）/ `add` 加 / `rm` 去掉。返回 `(block, 原, 新)`。
+
+    依赖是**接线**不是字段（写错一条就是一张假图），所以三道闸都放在这一处，命令层只管参数：
+    ① 每条依赖必须**已经存在** —— 悬空依赖 `check` 会一直报错（挂在那儿的块永远等不到）；
+    ② 引用当场规整成规范 id（`B-003` → `T-002#B-003`）、去重，免得同一件事写成两种写法；
+    ③ 改完**查环**，成环抛 `PlanError`（调用方拿不到返回值 ⇒ 不要 `commit()`，一个字都不写）。
+
+    `deps=None` = 没给（与 `deps=[]`＝清空不同）；`rm` 去掉一条本来就不等的 ⇒ 什么都没变 ⇒ 报错，
+    不许静默成功（「我明明删了那条依赖」却还在图上，比报错难查得多）。
+    """
+    _task, block = find(plan, ref)
+    if block is None:
+        raise PlanError(f"{ref} 是任务不是块 —— 块的前置用 `block deps <块 ref> --add/--rm`；"
+                        f"任务级依赖只能建任务时给（`task new --deps`）")
+    if deps is not None and (add or rm):
+        raise PlanError("--deps 是整组替换，与 --add / --rm 不能同时给")
+    if deps is None and not add and not rm:
+        raise PlanError("要说清怎么改：--deps <新的一组>（整组替换，给空=清空）/ --add <加> / --rm <去掉>")
+    drop = set()
+    for r in rm:
+        _rt, rb = find_soft(plan, r)
+        drop.add(rb["id"] if rb is not None else r)      # 悬空依赖也能按原样去掉（它解析不出来）
+    want = list(deps) if deps is not None else list(deps_of(block)) + list(add)
+    new, seen = [], set()
+    for d in want:
+        dt_, db = find_soft(plan, d)
+        if db is None:
+            if d in drop:
+                continue
+            raise PlanError(
+                f"依赖 {d} 不是这一份 plan 里的块"
+                + ("（它是任务）—— 块只能等另一个块；要等一整条任务，把那条依赖写进任务级依赖"
+                   "（`task new --deps`）" if dt_ is not None else
+                   " —— 依赖只能写已经存在的块（先建它，或换一条）"))
+        if db["id"] == block["id"]:
+            raise PlanError(f"{block['id']} 不能等自己")
+        if db["id"] in drop or db["id"] in seen:
+            continue
+        seen.add(db["id"])
+        new.append(db["id"])
+    old = deps_of(block)
+    if new == old:
+        raise PlanError(f"{block['id']} 的前置没变（{'、'.join(old) or '无'}）—— 没有写入任何东西")
+    block["deps"] = new
+    guard_acyclic(plan, f"改 {block['id']} 的前置")
+    log_event(plan, "deps",
+              f"{block['id']} 的前置：{'、'.join(old) or '（无）'} → {'、'.join(new) or '（无）'}"
+              + (f"（{note}）" if note else ""), actor=actor, ref=block["id"])
+    return block, old, new
 
 
 def insert_block(plan: dict, anchor_ref: str, *, before: bool = True, title: str,

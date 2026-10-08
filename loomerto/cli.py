@@ -1,4 +1,4 @@
-"""CLI 层：argparse + 23 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
+"""CLI 层：argparse + 24 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
 `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 是单层），
 动作一律放到二级（`block set` / `task rm`…）。唯一允许 print 与决定退出码的地方。
 
@@ -228,6 +228,33 @@ def cmd_block_assign(a):
     if ex.get("by") and ex["by"] != block.get("owner"):
         print(f"⚠ 这一块登记的「在做」是 {ex['by']}，与认领人 {block.get('owner') or '未指派'} 不一致"
               f"（换在做的人走 `set … <在途状态> --by`）")
+    return 0
+
+
+def cmd_block_deps(a):
+    """改一个块的**前置依赖**：`--deps` 整组替换 / `--add` 加 / `--rm` 去掉（空的前置 = 谁都不等）。
+
+    依赖是接线不是字段，所以三道闸（存在性 · 自指 · 环）都在 `edits.set_deps` 一处；成环时
+    它抛错 ⇒ 这里拿不到返回值 ⇒ 不 `commit()`，一个字都不写。
+    """
+    plan = load(a.slug)
+    task, block = find(plan, a.ref)
+    if block is None:
+        die(f"{a.ref} 是任务不是块 —— 块的前置用 `block deps <块 ref> --add/--rm`；"
+            f"任务级依赖只能建任务时给（`task new --deps`）")
+    block, old, new = edits.set_deps(plan, a.ref, deps=a.deps, add=a.add, rm=a.rm,
+                                     note=a.note or "", actor=a.actor)
+    commit(a.slug, plan, a)
+    print(f"✓ {block['id']} 的前置：{'、'.join(old) or '（无）'} → {'、'.join(new) or '（无）'}")
+    for d in new:
+        if d in old:
+            continue
+        _t, db = find_soft(plan, d)
+        if db is not None and db["status"] == "cancelled":
+            print(f"⚠ 新等上的 {d} 是 cancelled —— 它不会变 done，这块会一直「等前置」")
+    if task.get("deps"):
+        print(f"⚠ 它所属任务 {task['id']} 的任务级依赖（{'、'.join(task['deps'])}）也算它的前置"
+              f"（`block show {block['id']}` 里那几条标着「任务级」）")
     return 0
 
 
@@ -937,7 +964,7 @@ def _parser() -> argparse.ArgumentParser:
 
     # —— block 组：任务里的块（状态、文档、结构都落在这）
     g = sub.add_parser("block",
-                       help="块：new / insert / set / describe / assign / move / expand / collapse / rm / show"
+                       help="块：new / insert / set / describe / assign / deps / move / expand / collapse / rm / show"
                        ).add_subparsers(dest="sub", required=True)
     p = g.add_parser("new", help="往一条任务末尾加块（文档）")
     p.add_argument("slug", nargs="?", default="")
@@ -1019,6 +1046,17 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_block_assign, shift=["ref"])
 
+    p = g.add_parser("deps", help="改一个块的**前置依赖**（整组替换或加减；成环则拒改、什么都不写）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("--deps", nargs="*", default=None,
+                   help="整组替换（给空 = 清空前置）；与 --add / --rm 不能同时给")
+    p.add_argument("--add", nargs="*", default=[], help="加几条前置（已在里面的跳过）")
+    p.add_argument("--rm", nargs="*", default=[], help="去掉几条前置")
+    p.add_argument("--note", default="", help="为什么改（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_deps, shift=["ref"])
+
     p = g.add_parser("move", help="把一个块移到另一条任务（泳道）：换块 id + 重接依赖接线（成环则拒改）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="要移的块：T-001#B-002 或 B-002")
@@ -1083,7 +1121,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("text", nargs="?", default=None)
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
-                            "block", "status", "insert", "assign", "remove", "move",
+                            "block", "status", "insert", "assign", "deps", "remove", "move",
                             "expand", "collapse"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
