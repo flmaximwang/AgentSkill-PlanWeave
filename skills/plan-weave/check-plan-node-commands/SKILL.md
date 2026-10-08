@@ -21,7 +21,7 @@ metadata:
 
 **不属于本 skill**：
 - 临时文件有没有声明、有没有收尾节点删除 → `check-plan-temp-hygiene`（那条管临时文件闭环）。
-- 图质量（环 / 悬空依赖 / 无主就绪块）→ `plan.py check`。
+- 图质量（环 / 悬空依赖 / 无主就绪块）→ `loomerto check`。
 
 ## 判据（两条，不满足就不批准）
 
@@ -54,13 +54,15 @@ metadata:
 1. **跑**：`python3 "$C" <slug>` —— 结论先行一行（`✅ 批准` / `❌ 不批准` + 各类块的计数），再逐块列证据。
 2. **逐条核证据**：每个 ❌ 都给出 `出处（doc 围栏#N / 反引号 / cmds[i]）`、`证据原文`、`怎么补`。
 3. **补**：把命令写进块 doc 的 ```bash 围栏，并在同一块 doc 里给每个变量一行定义，然后
-   `plan.py block describe <slug> <块 id> --doc "<原 doc + 命令段>"`（`--doc` 是整段替换，原 doc 别丢）。
+   `loomerto block describe <slug> <块 id> --doc "<原 doc + 命令段>"`（`--doc` 是整段替换，原 doc 别丢）。
 4. **重跑**：`exit 0`（只剩 ⚠️ 也算过）才算批准。
 
 ## 命令速查
 
 ```bash
-C=~/.hermes/profiles/plan-weave/skills/plan-weave/check-plan-node-commands/scripts/check_plan_node_commands.py
+# 脚本就在本 skill 的 scripts/ 下（`skill_view` 给的 `skill_dir`）；路径与本 profile 无关：
+C=$(ls ~/.hermes/skills/*/check-plan-node-commands/scripts/check_plan_node_commands.py \
+       ~/.hermes/profiles/*/skills/*/check-plan-node-commands/scripts/check_plan_node_commands.py 2>/dev/null | head -1)
 python3 "$C" build-plan-weave            # 结论 + 逐块 ❌/⚠️ 证据 + 怎么补
 python3 "$C" build-plan-weave --verbose  # 连通过的块也列出来
 python3 "$C" build-plan-weave --only T-003        # 只看某个任务
@@ -90,7 +92,7 @@ python3 "$C" build-plan-weave --no-which # 跨机器跑：不用 PATH 探测首�
 - **`$HOME` 不是「未定义的变量」**：它是环境变量，人不需要替换它。第一版把它判成缺定义，
   在 lab-migration 上凭空造出 79 条「变量未定义」。要加白名单就往 `AMBIENT_ENV` 里加，别改判定逻辑。
 - **`--doc` 是整段替换**：补命令时要把原 doc 一起带上（`block describe` / `block set --doc` 都没有「追加」语义），否则就是把
-  原来的「做什么」删掉。补完用 `plan.py render <slug>` 刷一下 PLAN.md，人看的那两份也跟着更新。
+  原来的「做什么」删掉。补完用 `loomerto render <slug>` 刷一下 PLAN.md，人看的那两份也跟着更新。
 - **别为了让它过就把命令写成伪代码**（`跑一遍校验`、`<路径>`）：校验器认的是「能照抄进 shell」的形态，
   伪代码只会换一种方式被抓住（中文占位符那条判据）。
 

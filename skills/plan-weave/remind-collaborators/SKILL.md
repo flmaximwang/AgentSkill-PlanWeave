@@ -25,7 +25,7 @@ metadata:
 
 ```
 📋 <plan 标题> · 3/9 块（33%）· 更新 <时间>
-plan: <绝对路径>/PLAN.md — 开工前先读它，状态只通过 plan.py 改
+plan: <绝对路径>/PLAN.md — 开工前先读它，状态只通过 loomerto 改
 🔔 @<谁> 现在该动：
   · `T-004#B-001` 配自己的 Discord bot（可开始）
 ```
@@ -34,7 +34,7 @@ plan: <绝对路径>/PLAN.md — 开工前先读它，状态只通过 plan.py �
 
 ```
 📋 <plan 标题> · 3/9 块（33%）· 更新 <时间>
-file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
+file://<本 profile 的 plans 根>/<slug>/plan.html   # 本机现状：plans 根 = /Users/maxim/.hermes/profiles/plan-weave/workspace/plans
 🔔 @<谁> 现在该动：
   · `T-004#B-001` 配自己的 Discord bot（可开始）
 ```
@@ -59,10 +59,10 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
 | 全 plan 停滞 / 有 blocked 需要决定 | 用户 | 按 digest 节奏 |
 | 定时 digest（默认每 6h） | 全体（各推各的下一步） | 静默时段（默认 23:00–08:00）不发 |
 
-生成用 `plan.py digest <slug> --to <参与方>`；到点发送用：
+生成用 `loomerto digest <slug> --to <参与方>`；到点发送用：
 
 ```bash
-hermes send -t discord:<channel>:<thread> "$(python3 $P digest <slug> --to default)"
+hermes send -t discord:<channel>:<thread> "$(loomerto --plans-root <本 profile 的 workspace/plans> digest <slug> --to default)"
 ```
 
 ## 纪律（这部分比上面重要）

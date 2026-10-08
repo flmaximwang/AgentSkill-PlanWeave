@@ -54,16 +54,27 @@ done
 重装，不是原地改名）。skill 目录是 per-profile 的（default 是 `~/.hermes/skills/`，其余 profile 是
 `$HERMES_HOME/profiles/<名字>/skills/`），别的 profile 要用就在那个 profile 里重跑同一条命令。
 
-**本机现状（2026-10-07）：** 包用 `uv tool install --editable <repo>` 装好（`loomerto` / `plan` 在
+**本机现状（2026-10-08）：** 包用 `uv tool install --editable <repo>` 装好（`loomerto` / `plan` 在
 `~/.local/bin`）；五条 skill 装在 **default** profile、类目 `loomerto`（intake 那条按仓库路径归
-`agent-orchestration`），lock 的 identifier/URL 已指向 **`flmaximwang/Loomerto`**、`source_revision` =
-`7eed38f`，装好的副本与仓库**逐份 `diff -rq` 一致**。
-`plan-weave` profile 里还留着**旧一代**（类目 `plan-weave`，revision 停在 `c6f071b`/`19724db`，
-identifier 仍是旧仓库名）—— 那台记录员 bot 退役时要一起清。
+`agent-orchestration`），lock 的 identifier 指向 **`flmaximwang/Loomerto`**，装好的副本与仓库
+**逐份 `diff -rq` 一致**（同步手段是 `cp`，见下）。
+
+> **远端落后 ⇒ 别走 `hermes skills update`**：`origin/main` 停在 `4cd1204`（仓库改名那次），
+> 本地领先 19+ 个提交。hub 的 install/update 是按标识符**回远端取件**的，此时更新会把 profile
+> 副本**降级回旧版**。同步走本地：`cp -R <repo>/skills/<cat>/<name> <profile>/skills/<cat>/<name>`
+> 再 `diff -rq` 核对；推上远端之后才恢复 `hermes skills update <name>`（副本被本地改过时要 `--force`）。
+> lock 里记的 `source_revision` 因此落后，`check` 会一直报「本地已改」——那是正常的，不是漂移。
 
 **skill 里的 `scripts/plan.py` 是薄壳**：它把「本 skill 所在 profile 的 `<home>/workspace/plans`」交给包，
 再按 `checkout → $LOOMERTO_HOME → 已安装的 import → 已装好的 loomerto 命令` 的顺序找包；四条都不成立时，
 它会明确告诉你 `uv tool install --editable <repo>`（而不是抛一个看不懂的 ImportError）。
+
+**但 skill 正文一律写 `loomerto`，不写薄壳路径**（2026-10-08 改）：原先正文给的
+`$P = <profile>/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py` 是**仓库内布局**，
+装进 profile 后真实位置是 `skills/loomerto/…` —— 路径根本不存在，agent 找不到薄壳就**自己写 python
+去改 `plan.json`**（漏掉三视图同步与事件日志）。现在四条 skill 一律给 `loomerto --plans-root … <子命令> <slug>`，
+`maintain-a-shared-plan` 另加「硬规则 0：改 plan 只走 loomerto 命令」；两个 check skill 的 `$C`
+改成按 `~/.hermes/skills/*/<名字>/scripts/` 现算，不再写死某个 profile 的路径。
 
 **本仓库是这些 skill 与这个包的唯一 source of truth**：改这里 → `git push` → `hermes skills update <name>` 取新版。
 
@@ -71,7 +82,7 @@ identifier 仍是旧仓库名）—— 那台记录员 bot 退役时要一起清
 
 | skill | 用途 | 可执行入口 |
 |---|---|---|
-| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomerto <command> <slug>`（skill 里另有薄壳 `scripts/plan.py`） |
+| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomerto <command> <slug>`（skill 里另有旧写法薄壳 `scripts/plan.py`，等价） |
 | [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomerto digest <slug> --to <参与方>` |
 | [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
 | [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |

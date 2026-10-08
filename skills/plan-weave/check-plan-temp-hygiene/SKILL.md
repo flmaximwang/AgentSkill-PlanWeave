@@ -1,6 +1,6 @@
 ---
 name: check-plan-temp-hygiene
-description: "Use when 要看一份 plan 会不会留下没人清的临时文件。逐块扫生产证据 / 声明 / 收尾节点，给 ✅⚠️❌➖ 判定，并给出要补的 plan.py 命令。"
+description: "Use when 要看一份 plan 会不会留下没人清的临时文件。逐块扫生产证据 / 声明 / 收尾节点，给 ✅⚠️❌➖ 判定，并给出要补的 loomerto 命令。"
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -21,7 +21,7 @@ metadata:
 
 **不属于本 skill**：
 - 命令本身能不能直接跑、可替换的变量有没有定义 → `check-plan-node-commands`（那条管命令，这条管**临时文件闭环**）。
-- 图质量（环 / 悬空依赖 / 无主就绪块 / 悬置超时）→ `plan.py check`。
+- 图质量（环 / 悬空依赖 / 无主就绪块 / 悬置超时）→ `loomerto check`。
 - 提醒的时机与去重 → `remind-collaborators`。
 
 ## 判据（三问，每问都给证据）
@@ -44,21 +44,23 @@ metadata:
 
 1. **跑**：`python3 "$C" <slug>` —— 结论先行一行，然后三类清单（生产证据 / 声明 / 收尾节点）+ 建议命令。
 2. **读证据**：每条证据都写明 `块 id · 字段:行号 · 命中词 · 原文`，逐条核一遍它是不是真的会写临时文件。
-3. **按建议补 plan**（`plan.py` 现成命令，不需要改模型；工具按你的 plan 现算任务号与依赖块）：
+3. **按建议补 plan**（`loomerto` 现成命令，不需要改模型；工具按你的 plan 现算任务号与依赖块）：
    ```
-   py task new <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
-   py block new <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
+   loomerto task new <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
+   loomerto block new <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
       --doc "本轮产生的临时文件：<逐项列路径/glob>（产生自 <生产块 id>）" \
       --done_when "逐项给出归属（已在别处存在 / 不再需要），删除后 test ! -e 为空" \
       --deps <最后一个生产块>
-   py block describe <slug> <生产块 id> --doc "<原 doc>⏎临时文件：<路径/glob>"
+   loomerto block describe <slug> <生产块 id> --doc "<原 doc>⏎临时文件：<路径/glob>"
    ```
 4. **重跑**：改完再跑一次；`exit 0` 且结论不是 ❌ 才算过。
 
 ## 命令速查
 
 ```bash
-C=~/.hermes/profiles/plan-weave/skills/plan-weave/check-plan-temp-hygiene/scripts/check_plan_temp_hygiene.py
+# 脚本就在本 skill 的 scripts/ 下（`skill_view` 给的 `skill_dir`）；路径与本 profile 无关：
+C=$(ls ~/.hermes/skills/*/check-plan-temp-hygiene/scripts/check_plan_temp_hygiene.py \
+       ~/.hermes/profiles/*/skills/*/check-plan-temp-hygiene/scripts/check_plan_temp_hygiene.py 2>/dev/null | head -1)
 python3 "$C" drive-sync                 # 默认：结论 + 前 8 条证据 + 声明 + 收尾节点 + 建议
 python3 "$C" drive-sync --evidence      # 证据全列
 python3 "$C" drive-sync --strict        # 把「写文件形态」也算生产证据
@@ -90,7 +92,7 @@ python3 "$C" <slug> --plans-root <dir>  # 不在本 profile 的 plans 目录里�
 - **「收尾」单独不算清理语义**：drive-sync 有一块叫「2019 账本收尾」，那是收尾某件事，不是清文件。
 - **位置判据是软的，所以只报 ⚠️**：收尾节点是否「晚于所有生产块」按 `plan.json` 里的顺序
   （任务序 → 块序）算，而生产块集合来自文本证据、可能有噪声 ⇒ 位置偏早时**点名**晚于它的块，让人判。
-- **`plan.py` 改不了块的位置**：`set` 只能改状态与文档；移位置要 `expand` / `collapse` 或重建块
+- **`loomerto` 改不了块的位置**：`set` 只能改状态与文档；移位置要 `expand` / `collapse` 或重建块
   （见 `maintain-a-shared-plan`）。
 - **声明有四种写法，任一即算**：① 块 doc 里一行 `临时文件：<路径/glob>`；② 产物（`artifacts`）字段
   指向临时路径（`/tmp`、`scratch`、`_migrate` …）；③ `temps` / `tmp_paths` 结构化字段；④ plan 的 goal 里
