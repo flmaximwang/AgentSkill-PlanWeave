@@ -1,7 +1,8 @@
 # `loomerto` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `5656229`，分支
-> `feat/status-owner-rule` —— 命令面一个字没动，多出来的是「状态 × 负责人」的规则，见 §3）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `f9b91b0`，分支
+> `feat/block-schema` —— **命令面一个字没动**；这一版动的是「块的形状怎么声明」（`model.BLOCK_FIELDS`
+> + `new_block()` + `normalize_block()`，见 [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-19）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：

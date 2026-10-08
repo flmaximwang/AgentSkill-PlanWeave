@@ -483,7 +483,20 @@ file:///Users/maxim/.hermes/profiles/plan-weave/workspace/plans/<slug>/plan.html
   所以在 main 的目录里写 `PYTHONPATH=<worktree> python3 -m loomerto` 跑的其实是 **main 那份** ——
   「改动前 vs 改动后」的对拉会变成自己跟自己比（本 skill 踩过：11 份 plan 报「0 处差异」是假的）。
   要跑另一份代码，先 `cd` 到那份 checkout 的根，或者在**没有 `loomerto/` 目录**的地方显式给 `PYTHONPATH`；
-  并且**先证明跑的是哪一份**（两份 `--help` 的子命令表必须不同）。
+  并且**先证明跑的是哪一份**。证明办法要挑**这次改动真的动了的东西**：拿 `--help` 的子命令表当判据只在
+  「改了命令面」时成立 —— 只动模型/内部实现时两份 `--help` **一模一样**（这轮 B 档就是这样），
+  这时印一个代码里的记号才对，例如
+  `python3 -c "from loomerto import model; print('BLOCK_FIELDS' in dir(model))"`。
+- **块的形状只有一处声明 = `model.BLOCK_FIELDS`**（键 → 默认值/工厂）。**加一个块级键就改它一处**：
+  `model.new_block()` 是建块的唯一字面量，`edits.add_block` / `edits.insert_block` / `cli` 的 `expand` 步骤
+  与 `collapse` 合并块都调它 —— 别再手写块字典（以前四处各抄一遍，实库里 9 份 plan 的 158 个块没有
+  `exec` 就是这么来的）。只有 `block collapse` 会写的 `folded_from` 属于 `BLOCK_HISTORY_FIELDS`，
+  **不进那张表**（不是每个块都有），`normalize_block()` 也不许删它。
+- **老 plan 的缺键是「读时补齐、写时落盘」**：`store.load()` 按 `BLOCK_FIELDS` 只补不改地补齐每个块，
+  但**不因此落盘** —— 只读命令（`block show` / `check` / `current` / `workers` / `digest`）跑完，
+  `plan.json` 一个字节不变；对它做**任何写操作**才会让这些键材料化进文件（`exec: {}` 就是「没登记线程」，
+  语义不变；`commit()` 里顺手写掉）。所以「老 plan 文件里突然多出 `exec`」不是数据被动过，
+  也不是新 bug；要拿它当证据时得先说清是读出来的还是写出来的。
 
 ## Support files
 

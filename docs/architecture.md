@@ -23,7 +23,9 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── assets/canvas.html            `open` 的**可编辑**画布页面（同样随包走）
 │   ├── assets/theme.css              **两页共用的主题**：颜色/字体/状态胶囊/按钮/分隔线/进度条
 │   │                                 （plan.html 由 render、canvas.html 由 serve 在生成时注入）
-│   ├── model.py     数据模型与派生规则：状态机、状态×负责人（STATUS_OWNER）、block_deps/edge_deps、ready/waiting 派生、
+│   ├── model.py     数据模型与派生规则：状态机、状态×负责人（STATUS_OWNER）、**块的形状
+│   │                 （BLOCK_FIELDS = 键→默认值，唯一一处；new_block() = 建块的唯一字面量；
+│   │                 normalize_block() = 老数据缺键只补不改）**、block_deps/edge_deps、ready/waiting 派生、
 │   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
 │   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
 │   │                **唯一写入漏斗 commit(slug, plan)**
@@ -56,7 +58,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 - 页面的 CSS 里只留**布局**（谁在哪、多宽、怎么折行）；宽度变量两页同名 `--detail-w`。
 - 改观感 = 改 `theme.css` 一处，然后 `loomerto render`（看板）与重开 `open`（画布）各看一眼。
 
-## 4. 跨 harness / 跨安装方式的五条约定
+## 4. 跨 harness / 跨安装方式的六条约定
 
 1. **错误只抛 `PlanError`**（`model.PlanError`，带 `code`＝建议的退出码）。没有 `sys.exit`。
    最外层（`cli.main()` / 未来的服务）把它变成 stderr + 退出码。
@@ -73,6 +75,13 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 5. **改动只有一份实现**（`edits.py`）：改状态 / 改字段 / 加任务 / 加块 / 重排都收在那里；
    `cli.py` 与 `serve.py` 都只是薄薄一层适配（一个是参数解析 + print，一个是 HTTP）。
    谁再写第二份「改状态」，`runs` / `feedback` / `exec` 的写法就会开始漂。
+6. **块的形状只有一处声明**（`model.BLOCK_FIELDS`）：一个块**有哪些键、默认值是什么**写在那张表里，
+   建块的几处（`edits.add_block` / `edits.insert_block` / `cli` 的 `expand`、`collapse`）一律调
+   `model.new_block()` —— 谁再手写一份块字典字面量，加一个键时就会漏掉它（曾经四处各抄一遍，
+   实库里 9 份 plan 的 158 个块没有 `exec` 就是这么来的）。
+   **老数据缺键由 `store.load()` 里的 `model.normalize_block()` 补齐（只补不改、不删）** ——
+   读到的块总是完整形状，写不写盘由调用方决定（下一次 `commit()` 顺手材料化，语义不变）。
+   历史键（只有 `block collapse` 写的 `folded_from`）**不进表**，所以补不出来、也不会被删掉。
 
 ## 5. 薄壳契约（`skills/.../scripts/plan.py`）
 

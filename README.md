@@ -102,8 +102,11 @@ identifier 仍是旧仓库名）—— 那台记录员 bot 退役时要一起清
 ## skills/plan-weave/maintain-a-shared-plan
 
 **一份 plan 的全生命周期**。模型借自 [GaosCode/PlanWeave](https://github.com/GaosCode/PlanWeave)（那个项目另有其名与本包无关）：
-plan → task（节点，可带任务级 `deps`）→ block（**一份可独立认领、可被评审的工作**，必须有 `doc` 与
-`done_when` 两个字段，没有判据的块不许建）→ run（改状态时自动追加的执行记录）。
+plan → task（节点，可带任务级 `deps`）→ block（**一份可独立认领、可被评审的工作**，约定上要有 `doc` 与
+`done_when`）→ run（改状态时自动追加的执行记录）。
+**块的形状只有一处声明**：`model.BLOCK_FIELDS`（键 → 默认值/工厂）+ `model.new_block()`（建块的唯一字面量），
+老数据缺键由 `model.normalize_block()` 在 `store.load()` 里**只补不改**地补齐（实库里 9 份 plan 的 158 个块
+没有 `exec` 就是这么来的；补出来的键在下一次 `commit()` 才落盘）。
 
 - **目录**：`<plans root>/<slug>/`（plans root 见上面「装什么」；profile 场景 = `<profile>/workspace/plans`），
   `plan.json` 是唯一真相；`PLAN.md`（人读摘要 + mermaid）、`plan.html`（自包含离线泳道看板）、
