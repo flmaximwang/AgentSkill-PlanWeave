@@ -50,6 +50,89 @@ def owner_rule(status: str) -> str:
     return STATUS_OWNER.get(status, "may")
 
 
+# ------------------------------------------------------------------ 块的形状（唯一一份声明）
+# 一个块**有哪些键、默认值是什么**，只有这一处。建块的那几处（`edits.add_block` /
+# `edits.insert_block` / `cli` 的 expand、collapse）一律调 `new_block()`，别各写一份字面量 ——
+# 以前同一份字典在四个地方各抄了一遍，加一个键就得追上四处，漏一处不报错、只是某些块少个键。
+# 值写成工厂（`list` / `dict`）是因为可变默认值不能几个块共享同一个对象。
+BLOCK_FIELDS = {
+    "id": "",
+    "title": "",
+    "kind": "impl",          # 取值见 KINDS
+    "status": "blocked",     # 取值见 BLOCK_STATUS；默认「待批准」（R-10）
+    "owner": "",
+    "doc": "",
+    "done_when": list,
+    "artifacts": list,
+    "deps": list,
+    "review_of": "",
+    "feedback": "",
+    "exec": dict,            # {by, started, delegation, task_index, transcript, note}
+    "status_since": "",
+    "runs": list,            # [{at, by, from, to, note}]
+}
+
+# 只有粒度调整（`block collapse`）会写的历史键：不是每个块都有，所以不进 `BLOCK_FIELDS`；
+# 但它是**合法**的 —— `normalize_block()` 只补不改、不删。
+BLOCK_HISTORY_FIELDS = ("folded_from",)
+
+
+def new_block(bid: str, *, title: str, kind: str = "impl", status: str = "blocked",
+              owner: str = "", doc: str = "", done_when=(), deps=(), review_of: str = "",
+              artifacts=(), feedback: str = "", exec=None, runs=None, status_since: str = "",
+              **history) -> dict:
+    """造一个块 dict —— **建块的唯一一处字面量**（形状见 `BLOCK_FIELDS`）。
+
+    `**history` 只收 `BLOCK_HISTORY_FIELDS` 里的键（目前只有 `folded_from`）；
+    想加一个块级键，先写进 `BLOCK_FIELDS`（或那张历史表），别从这里绕进去。
+    """
+    bad = sorted(set(history) - set(BLOCK_HISTORY_FIELDS))
+    if bad:
+        raise PlanError(f"{bad} 不是块的键 —— 要加键就写进 model.BLOCK_FIELDS（唯一一份声明）；"
+                        f"只有 history 表里的 {list(BLOCK_HISTORY_FIELDS)} 能这么传")
+    if not (title or "").strip():
+        raise PlanError("块要有标题")
+    if kind not in KINDS:
+        raise PlanError(f"块类型只能是 {KINDS}")
+    if status not in BLOCK_STATUS:
+        raise PlanError(f"block 状态只能是 {BLOCK_STATUS}")
+    b = {k: (v() if callable(v) else v) for k, v in BLOCK_FIELDS.items()}
+    b.update(id=bid, title=title, kind=kind, status=status, owner=owner, doc=doc,
+             done_when=list(done_when or []), artifacts=list(artifacts or []),
+             deps=list(deps or []), review_of=review_of, feedback=feedback,
+             exec=dict(exec or {}), runs=list(runs or []),
+             status_since=status_since or now())
+    b.update(history)
+    return b
+
+
+def normalize_block(block: dict) -> list:
+    """把老数据里缺的键按 `BLOCK_FIELDS` 补上（**只补不改、不删**），返回补了哪些键（已排序）。
+
+    为什么需要它：块可以被任意一份历史版本的代码（或人手）写出来，缺键不报错 ——
+    实库里就有 9 份 plan 的 158 个块没有 `exec`，全靠读者各自 `.get()` 兜着。
+    补在 `store.load()` 里：**读**到的块总是完整形状；要不要落盘由调用方决定
+    （下一次 `commit()` 顺手材料化，语义不变 —— `exec: {}` 就是「没登记线程」）。
+
+    历史键（`folded_from`）不在表里，所以永远补不出来、也不会被删掉。
+    """
+    filled = [k for k in BLOCK_FIELDS if k not in block]
+    for k in filled:
+        v = BLOCK_FIELDS[k]
+        block[k] = v() if callable(v) else v
+    return sorted(filled)
+
+
+def normalize_plan(plan: dict) -> dict:
+    """把一份 plan 里**每个块**补齐缺键（只补不改）。返回 `{块 id: 补了哪些键}`。"""
+    filled = {}
+    for _t, b in all_blocks(plan):
+        got = normalize_block(b)
+        if got:
+            filled[b.get("id", "?")] = got
+    return filled
+
+
 # 时间
 def now() -> str:
     return dt.datetime.now().astimezone().replace(microsecond=0).isoformat()

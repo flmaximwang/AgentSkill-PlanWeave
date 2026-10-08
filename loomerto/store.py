@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from .model import PlanError, now
+from . import model
 from . import render
 
 # 本包所在的目录（模板是包数据，跟着包走）
@@ -105,7 +106,16 @@ def load(slug: str) -> dict:
         raise PlanError(f"找不到 plan 数据文件（{p}）"
                         + ("" if plan_file() else f" —— slug '{slug}'")
                         + f"。用 `loomerto --plan {p} new {slug or '<slug>'} --title ...` 建一个。")
-    return json.loads(p.read_text(encoding="utf-8"))
+    plan = json.loads(p.read_text(encoding="utf-8"))
+    # 老数据缺键在这里补齐（只补不改、不落盘）：读到的块总是完整形状，读者不必各自 `.get()`
+    # 兜着。落盘与否由调用方决定 —— 下一次 `commit()` 顺手材料化（语义不变）。
+    normalize(plan)
+    return plan
+
+
+def normalize(plan: dict) -> dict:
+    """把一份 plan 里每个块按 `model.BLOCK_FIELDS` 补齐缺键（只补不改）。返回 `{块 id: 补了哪些键}`。"""
+    return model.normalize_plan(plan)
 
 
 def atomic_write(path: Path, text: str) -> None:

@@ -340,10 +340,8 @@ def cmd_block_expand(a):
     new_task["blocks"].append(block)
     chain = [block]
     for i, (t_, d_, c_, k_) in enumerate(steps, start=2):
-        nb = {"id": f"{tid}#B-{i:03d}", "title": t_, "kind": k_, "status": "pending",
-              "owner": owner, "doc": d_, "done_when": c_, "artifacts": [],
-              "deps": [chain[-1]["id"]], "review_of": "", "feedback": "", "exec": {},
-              "status_since": now(), "runs": []}
+        nb = new_block(f"{tid}#B-{i:03d}", title=t_, kind=k_, status="pending",
+                       owner=owner, doc=d_, done_when=c_, deps=[chain[-1]["id"]])
         new_task["blocks"].append(nb)
         chain.append(nb)
     plan["tasks"].insert(plan["tasks"].index(src) + 1, new_task)
@@ -496,12 +494,12 @@ def cmd_block_collapse(a):
                "doc": b.get("doc") or "", "done_when": list(b.get("done_when") or [])}
               for b in task["blocks"]]
     mid = next_block_id(plan, home)
-    merged = {"id": mid, "title": a.title or task["title"], "kind": kind, "status": status,
-              "owner": a.owner or task.get("owner") or live[0].get("owner") or "",
-              "doc": doc, "done_when": crit, "artifacts": arts, "deps": ext,
-              "review_of": (rviews.pop() if len(rviews) == 1 else ""),
-              "feedback": (live[0].get("feedback") or "") if len(live) == 1 else "",
-              "status_since": now(), "runs": runs, "folded_from": folded, "exec": exe}
+    merged = new_block(mid, title=a.title or task["title"], kind=kind, status=status,
+                       owner=a.owner or task.get("owner") or live[0].get("owner") or "",
+                       doc=doc, done_when=crit, artifacts=arts, deps=ext,
+                       review_of=(rviews.pop() if len(rviews) == 1 else ""),
+                       feedback=(live[0].get("feedback") or "") if len(live) == 1 else "",
+                       runs=runs, exec=exe, folded_from=folded)
 
     if a.dry_run:
         print(f"[dry-run] {task['id']}「{task['title']}」（{len(live)} 块）→ 1 块 {mid}「{merged['title']}」")

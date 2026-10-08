@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find,
-                    guard_acyclic, log_event, next_block_id, next_ids, now)
+                    guard_acyclic, log_event, new_block, next_block_id, next_ids, now)
 
 TASK_STATUS = ["pending", "running", "done", "blocked", "cancelled"]
 
@@ -189,6 +189,9 @@ def add_block(plan: dict, task_ref: str, *, title: str, kind: str = "impl", doc:
 
     `status` 默认 `blocked`（= 待批准，等有人点头）—— 与 R-10 一致：只有判断这块无需审批
     才能干时才显式给 `pending`。
+
+    形状（有哪些键、默认值）全在 `model.BLOCK_FIELDS`，这里只给值 —— 建块的唯一一处字面量是
+    `model.new_block()`。
     """
     task, _ = find(plan, task_ref)
     if not (title or "").strip():
@@ -197,13 +200,10 @@ def add_block(plan: dict, task_ref: str, *, title: str, kind: str = "impl", doc:
         raise PlanError(f"块类型只能是 {KINDS}")
     if status not in BLOCK_STATUS:
         raise PlanError(f"block 状态只能是 {BLOCK_STATUS}")
-    bids = [b["id"] for b in task["blocks"]]
-    bid = f"{task['id']}#" + next_ids(plan, "B-", [b.split("#")[1] for b in bids])
-    block = {"id": bid, "title": title, "kind": kind, "status": status or "blocked",
-             "owner": owner or task.get("owner", ""), "doc": doc or "",
-             "done_when": list(done_when or []), "artifacts": [], "deps": list(deps or []),
-             "review_of": review_of or "", "feedback": "", "exec": {},
-             "status_since": now(), "runs": []}
+    bid = next_block_id(plan, task)
+    block = new_block(bid, title=title, kind=kind, status=status or "blocked",
+                      owner=owner or task.get("owner", ""), doc=doc or "",
+                      done_when=done_when, deps=deps, review_of=review_of or "")
     task["blocks"].append(block)
     log_event(plan, "block", f"新增块 {bid}「{title}」", actor=actor, ref=bid)
     return task, block
@@ -275,12 +275,11 @@ def insert_block(plan: dict, anchor_ref: str, *, before: bool = True, title: str
         inherited = list(deps_of(anchor))
         if anchor.get("review_of"):
             inherited.append(anchor["review_of"])
-    nb = {"id": bid, "title": title, "kind": kind, "status": status,
-          "owner": owner or anchor.get("owner") or task.get("owner", ""),
-          "doc": doc or "", "done_when": list(done_when or []), "artifacts": [],
-          "deps": [anchor["id"]] if not before else inherited,
-          "review_of": review_of or "", "feedback": "", "exec": {},
-          "status_since": now(), "runs": []}
+    nb = new_block(bid, title=title, kind=kind, status=status,
+                   owner=owner or anchor.get("owner") or task.get("owner", ""),
+                   doc=doc or "", done_when=done_when,
+                   deps=[anchor["id"]] if not before else inherited,
+                   review_of=review_of or "")
     where = (f"插在 {anchor['id']}「{anchor['title']}」{'之前' if before else '之后'}"
              f"（{task['id']} 第 {idx + (0 if before else 1) + 1} 位）")
     rewired = []
