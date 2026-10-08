@@ -23,7 +23,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── assets/canvas.html            `open` 的**可编辑**画布页面（同样随包走）
 │   ├── assets/theme.css              **两页共用的主题**：颜色/字体/状态胶囊/按钮/分隔线/进度条
 │   │                                 （plan.html 由 render、canvas.html 由 serve 在生成时注入）
-│   ├── model.py     数据模型与派生规则：状态机、block_deps/edge_deps、ready/waiting 派生、
+│   ├── model.py     数据模型与派生规则：状态机、状态×负责人（STATUS_OWNER）、block_deps/edge_deps、ready/waiting 派生、
 │   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
 │   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
 │   │                **唯一写入漏斗 commit(slug, plan)**

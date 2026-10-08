@@ -1,6 +1,7 @@
 # `loomerto` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `3acfd7b`）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `5656229`，分支
+> `feat/status-owner-rule` —— 命令面一个字没动，多出来的是「状态 × 负责人」的规则，见 §3）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -136,6 +137,11 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 - 块状态：`pending` / `claimed` / `running` / `review` / `done` / `blocked` / `cancelled`；
   任务状态只有 `pending` / `running` / `done` / `blocked` / `cancelled`。
 - **写 `ready`/`waiting` 会被拒绝**（派生状态，由依赖算出来）——两处真相是这套东西要消灭的。
+- **`ready`（待认领）还多一个条件：没人认领。** 块的显示状态与负责人的关系是一张表
+  （`model.STATUS_OWNER`）：**待认领 = 依赖就绪 且 没有 `owner`**；依赖就绪但**有** `owner` 的块显示成
+  **`claimed`（已认领）**——「有人接了、还没开干」。所以给一个待认领的块 `assign --to x`（或 `set … --owner x`）
+  之后它就显示成「已认领」；要让它回到「待认领」（谁都有空谁接）就 `block assign <ref> --unset`。
+  `等前置` / `待批准` 可以有 `owner`（先派活、或写「等谁点头」），`已完成` 留着 `owner` = 谁做的。
 - **参数按状态卡**（`set` 一个入口同时管状态与身份，所以给错状态的旗标会退 2 并列出该状态收什么）：
 
   | 状态 | 收哪些旗标（除通用的 `--actor`） |
@@ -200,7 +206,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 
 ### `check` — 图质量（有错误退 1）
 `py check <slug> [--stale-hours 24]`
-- 查：重复块 id / 悬空依赖 / 任务级环 / 已就绪但无人认领 / 缺 `done_when` / 评审块缺 `review_of` / 悬置超时。
+- 查：重复块 id / 悬空依赖 / 任务级环 / **已认领却没写负责人**（待认领按定义就没人接，不再拿它当告警）/ 缺 `done_when` / 评审块缺 `review_of` / 悬置超时（只数**存储**状态在途的块）。
 - **有错误就别往下走**；告警要念给用户听。
 
 ### `workers` — 在途块登记的子代理线程还在动吗（`threads` 是它的别名）
@@ -231,8 +237,9 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
   右侧详情栏与看板一样是常驻栏，**拖动那条分隔线调宽度**（双击复位，宽度记在浏览器里）。
 - 画布上能改：块的 标题 / 做什么 / 判据 / 认领人 / 类型 / **状态**（认领·开干·送审·打回·收工）、
   新建任务、新建块、**拖动卡片改同一条泳道里的先后**。
-- **不做**（故意的）：删块 / 删任务、跨泳道拖动、直接改 `deps` / `review_of` —— 那些会改块 id 或接线，
-  走 `block rm` / `block insert` / `block expand` / `block collapse` 更安全。理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
+- **不做**（故意的）：删块 / 删任务、直接改 `deps` / `review_of` —— 那些会一脚踩坏判据或接线；
+  走 `block rm` / `block insert` / `block expand` / `block collapse` / `block move` 更安全。
+  （**跨泳道拖动已经支持**：一次 `move` 换块 id 并把引用它的 `deps` / `review_of` 一次重接，成环则拒改。）理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
 - **写回**：每次改动都走 `edits`（改动的唯一实现）→ `store.commit()`，所以数据文件与三个视图**同时**更新；
   前端每次保存都带上自己读到的 `rev`（= `updated_at`），对不上回 **409** 并让人先刷新（不做自动合并）。
 - 失败不改任何东西：先改内存，出错抛 `PlanError` → 400（中文原因）；服务不会因为一次坏请求就死。

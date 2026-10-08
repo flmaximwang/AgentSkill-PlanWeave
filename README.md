@@ -109,11 +109,14 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   `plan.json` 是唯一真相；`PLAN.md`（人读摘要 + mermaid）、`plan.html`（自包含离线泳道看板）、
   `plan.canvas`（Obsidian JSON Canvas）三个视图**永远不要手改** —— 下一次落盘就覆盖。
 - **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/blocked/cancelled`；
-  `ready` 与 `waiting` 由依赖算出来（依赖全 done ⇒ ready）。写 `ready` 会被拒绝是**故意的** ——
+  `ready` 与 `waiting` 由依赖**与认领**算出来（依赖全 done **且没人认领** ⇒ `ready` 待认领；依赖全 done
+  **且有 `owner`** ⇒ `claimed` 已认领；依赖没全 done ⇒ `waiting`）。写 `ready` 会被拒绝是**故意的** ——
   两处真相就是这个系统要消灭的东西。**新建块默认 `blocked`（待批准）**，AI 判断无需审批才写 `pending`。
+- **状态 × 负责人**（`model.STATUS_OWNER`）：`待认领` **不能**有负责人（定义就是「还没人接」）；`已认领` /
+  `进行中` / `待评审` **必须**有；`待批准` / `等前置` / `已完成` / `已取消` 可有可无。
 - **一次协作回合的固定动作**：`current`（先看现在能动的块）→ `note`（总结这一段真正发生了什么，
   拿不准的写「待确认」）→ `block set`（只改受影响的块，带 `--by` / `--note`；派给子代理时同一句里
-  补 `--delegation` / `--transcript`）→ `check`（环 / 悬空依赖 / 无主就绪块 / 悬置超时，
+  补 `--delegation` / `--transcript`）→ `check`（环 / 悬空依赖 / 已认领却没写负责人 / 悬置超时，
   **有错误就别往下走**）→ `workers`（每个在途块的线程还在动吗）→ `digest`（提醒，纪律见
   `remind-collaborators`）。
   补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
