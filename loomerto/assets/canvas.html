@@ -112,6 +112,13 @@ const ZH = {done:"已完成",running:"进行中",claimed:"已认领",review:"待
 const LEGEND = ["blocked","waiting","ready","claimed","running","review","done","cancelled"];
 const zh = (s) => ZH[s] || s;
 const blockOf = (id) => { for (const t of (VIEW?.tasks||[])) for (const b of t.blocks) if (b.id === id) return [t,b]; return [null,null]; };
+// 派生状态和存储值不一样时，说清**为什么**（别一律说成「被依赖挡着」）：
+//   pending→waiting 前置没完 / pending→ready 前置已就绪、还没人接 / pending→claimed 已经有人认领
+function derivedWhy(b){
+  if (b.raw_status !== "pending") return "";
+  return {waiting: "，被前置挡着", ready: "，前置已就绪、还没人认领",
+          claimed: "，已有人认领、还没开干"}[b.status] || "";
+}
 
 function msg(text, cls){ const m = $("#msg"); m.textContent = text || ""; m.className = cls || ""; }
 
@@ -292,7 +299,7 @@ function editor(){
   const parts = VIEW.participants.map(p => `<option value="${esc(p.id)}">`).join("");
   box.innerHTML = `
     <h2>${esc(b.id)} <span class="pill ${b.status}">${esc(zh(b.status))}</span></h2>
-    <p class="goal">派生状态由依赖算出：<b>${esc(zh(b.status))}</b>${b.status !== b.raw_status ? `（内部 ${esc(b.raw_status)}，被依赖挡着）` : ""}</p>
+    <p class="goal">派生状态由依赖与认领算出：<b>${esc(zh(b.status))}</b>${b.status !== b.raw_status ? `（内部 ${esc(b.raw_status)}${derivedWhy(b)}）` : ""}</p>
     <label for="f_title">标题</label><input id="f_title" value="${esc(b.title)}">
     <label for="f_doc">做什么（doc）</label><textarea id="f_doc">${esc(b.doc)}</textarea>
     <label for="f_done">判据（一行一条）</label><textarea id="f_done">${esc((b.done_when||[]).join("\n"))}</textarea>

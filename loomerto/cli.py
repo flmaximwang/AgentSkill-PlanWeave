@@ -729,8 +729,10 @@ def cmd_check(a):
         for d in block_deps(plan, t, b):
             if find_soft(plan, d)[1] is None:
                 errs.append(f"{b['id']} 依赖不存在的 {d}")
-        if block_effective(plan, b, t) == "ready" and not b.get("owner"):
-            warns.append(f"{b['id']} 已就绪但无人认领")
+        eff = block_effective(plan, b, t)
+        if owner_rule(eff) == "required" and not (b.get("owner") or "").strip():
+            warns.append(f"{b['id']} 是「{STATUS_ZH.get(eff, eff)}」却没有负责人 —— "
+                         f"谁接的要说清（`block assign {b['id']} --to <参与方>`）")
         if not b.get("done_when"):
             warns.append(f"{b['id']} 没有可核验的完成判据（done_when 为空）")
         if b["kind"] == "review" and not b.get("review_of"):
@@ -760,7 +762,10 @@ def cmd_workers(a):
     for t, b in all_blocks(plan):
         e = block_effective(plan, b, t)
         ex = b.get("exec") or {}
-        if not ex.get("by") and e not in ACTIVE:
+        raw = b.get("status") or ""
+        # 「在途」按**存储**状态判：派生出来的「已认领」（`pending` + 有 owner）既没登记过线程、
+        # 也没有开工时刻 —— 它不该出现在这份报告里（见 model.STATUS_OWNER）。
+        if not ex.get("by") and raw not in ACTIVE:
             continue
         if ex.get("by") and e not in ACTIVE:
             v, ev, det = "stale", (f"块现在是「{STATUS_ZH.get(e, e)}」不在途，却还挂着线程登记"

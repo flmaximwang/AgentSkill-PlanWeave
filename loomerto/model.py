@@ -25,6 +25,30 @@ ACTIVE = {"claimed", "running", "review"}
 OPEN = {"pending", "claimed", "running", "review", "blocked"}
 KINDS = ["impl", "review", "decision", "research"]
 
+# 状态 × 负责人（`owner` = 认领人）：一个块「走到哪一步」与「归谁」的对应关系，全在这一张表里。
+# 键是**显示状态**（`block_effective` 的返回值，含派生的 `ready` / `waiting`）。
+# 任务是泳道，它的 `owner` 是「谁负责这条线」，不归这张表管。
+#   "never"    —— 这个状态**不能**有负责人（它的定义就是「还没人接」）
+#   "required" —— 这个状态**必须**有负责人（它的定义含「有主」）
+#   "may"      —— 可有可无（owner 是附加信息，不是状态的一部分）
+# 三档各自由谁兑现：`never` 由**派生**兑现（见 `block_effective`：有 owner 的块不叫待认领）；
+# `required` 由 `check` 盯着（⚠ 告警 —— 硬校验属 R-04，还没做）；`may` 只是惯例。
+STATUS_OWNER = {
+    "blocked":   "may",       # 待批准：owner = 该点头的那个人（「等人 / 等事」就这么写）
+    "waiting":   "may",       # 等前置：前置没完；owner 可以先派好，轮到他就接手
+    "ready":     "never",     # 待认领：依赖已就绪、**还没人接** —— 有 owner 的块不是它，是已认领
+    "claimed":   "required",  # 已认领：有人接了、还没开干
+    "running":   "required",  # 进行中：正在做（`exec.by` 记此刻动手的那个人）
+    "review":    "required",  # 待评审：送审了等结论，块有主
+    "done":      "may",       # 已完成：owner 留着 = 谁做的
+    "cancelled": "may",       # 已取消
+}
+
+
+def owner_rule(status: str) -> str:
+    """这个（显示）状态对负责人的要求：`"never"` / `"required"` / `"may"` —— 见 `STATUS_OWNER`。"""
+    return STATUS_OWNER.get(status, "may")
+
 
 # 时间
 def now() -> str:
@@ -122,7 +146,16 @@ def edge_deps(plan: dict, task: dict, block: dict) -> list[str]:
     return uniq
 
 def block_effective(plan: dict, block: dict, task: dict | None = None) -> str:
-    """派生状态：pending + 依赖全 done => ready；pending + 依赖未全 done => waiting。"""
+    """派生状态：pending + 依赖全 done => ready；pending + 依赖未全 done => waiting。
+
+    **依赖就绪之后还分两种**（`STATUS_OWNER`）：
+    - 没人认领 ⇒ `ready`（待认领：可以开工、谁都有空谁接）
+    - 已经有 owner ⇒ `claimed`（已认领：有人接了、还没开干）
+
+    也就是「待认领」的定义里就含「没人接」—— 否则它会跟自己带着的负责人打架
+    （标签说「还没人接」，数据却写着谁负责）。有 owner 的块不该显示成待认领，
+    它是已认领；这条由派生保证，跟「依赖没完就是等前置」一样，不用人手工同步。
+    """
     st = block["status"]
     if st != "pending":
         return st
@@ -132,7 +165,7 @@ def block_effective(plan: dict, block: dict, task: dict | None = None) -> str:
         _, db = find_soft(plan, d)
         if db is None or db["status"] != "done":
             return "waiting"
-    return "ready"
+    return "claimed" if (block.get("owner") or "").strip() else "ready"
 
 def task_status(plan: dict, task: dict) -> str:
     eff = [block_effective(plan, b, task) for b in task["blocks"]] or ["pending"]
@@ -157,7 +190,9 @@ def progress(plan: dict) -> tuple[int, int]:
 def stale_blocks(plan: dict, hours: float):
     out = []
     for t, b in all_blocks(plan):
-        if block_effective(plan, b, t) in {"claimed", "running", "review"}:
+        # 「在途」按**存储**状态判：派生出来的「已认领」（`pending` + 有 owner）没有开工时刻
+        # ——它的 `status_since` 还是当初置 `pending` 的那一刻，拿它算悬置只会误报。
+        if b["status"] in ACTIVE:
             h = hours_since(b.get("status_since") or plan["updated_at"])
             if h is not None and h >= hours:
                 out.append((t, b, h))

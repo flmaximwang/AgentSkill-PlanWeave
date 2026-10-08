@@ -171,7 +171,8 @@ function eff(b){
     const db = byId(d);
     if (!db || db.status !== 'done') return 'waiting';
   }
-  return 'ready';
+  // 待认领 = 依赖就绪 **且没人接**；有 owner 的块是「已认领」（有人接了、还没开干）
+  return b.owner ? 'claimed' : 'ready';
 }
 // 画边用的前置：显式 deps + review_of + 任务级交接（只从本任务首块引到前置任务的收尾块）
 function edgeDeps(b){
