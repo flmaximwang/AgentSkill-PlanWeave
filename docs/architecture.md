@@ -26,7 +26,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │   ├── model.py     数据模型与派生规则：状态机、状态×负责人（STATUS_OWNER）、**块的形状
 │   │                 （BLOCK_FIELDS = 键→默认值，唯一一处；new_block() = 建块的唯一字面量；
 │   │                 normalize_block() = 老数据缺键只补不改）**、block_deps/edge_deps、ready/waiting 派生、
-│   │                环检测、粒度规则（expand/collapse 的结构演算）、事件日志。**纯函数，不碰磁盘。**
+│   │                环检测、粒度规则（expand/compress 的结构演算）、事件日志。**纯函数，不碰磁盘。**
 │   ├── store.py     磁盘：**plan_path() 定位**（--plan / --plans-root / 当前目录）、原子落盘、
 │   │                **唯一写入漏斗 commit(slug, plan)**
 │   ├── render.py    plan.json → PLAN.md / plan.canvas / plan.html，**只返回字符串**（写盘归 store）
@@ -72,16 +72,17 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
    当前目录的 `plan.json`（存在才认）→ 都没有就退 2 并打印该给什么。
    **包里没有 profile / hermes 这类概念**（它可能装在 site-packages 里，离任何 harness 都远）；
    路径由调用方交给它。模板同理：`$LOOMERTO_TEMPLATE` → 包自带的 `loomerto/assets/plan.html`。
-5. **改动只有一份实现**（`edits.py`）：改状态 / 改字段 / 加任务 / 加块 / 重排都收在那里；
+5. **改动只有一份实现**（`edits.py`）：改状态 / 改字段 / 加任务 / 加块 / 重排 / 换泳道 / 绕过都收在那里；
    `cli.py` 与 `serve.py` 都只是薄薄一层适配（一个是参数解析 + print，一个是 HTTP）。
    谁再写第二份「改状态」，`runs` / `feedback` / `exec` 的写法就会开始漂。
+   命令层「一条属性一条命令」（`block set_*`）全部走 `edits.set_field` 一处 —— 加一条属性不必再写一条命令。
 6. **块的形状只有一处声明**（`model.BLOCK_FIELDS`）：一个块**有哪些键、默认值是什么**写在那张表里，
-   建块的几处（`edits.add_block` / `edits.insert_block` / `cli` 的 `expand`、`collapse`）一律调
+   建块的几处（`edits.add_block` / `edits.insert_block` / `cli` 的 `expand`、`compress`）一律调
    `model.new_block()` —— 谁再手写一份块字典字面量，加一个键时就会漏掉它（曾经四处各抄一遍，
    实库里 9 份 plan 的 158 个块没有 `exec` 就是这么来的）。
    **老数据缺键由 `store.load()` 里的 `model.normalize_block()` 补齐（只补不改、不删）** ——
    读到的块总是完整形状，写不写盘由调用方决定（下一次 `commit()` 顺手材料化，语义不变）。
-   历史键（只有 `block collapse` 写的 `folded_from`）**不进表**，所以补不出来、也不会被删掉。
+   历史键（只有 `block compress` 写的 `folded_from`）**不进表**，所以补不出来、也不会被删掉。
 
 ## 5. 薄壳契约（`skills/.../scripts/plan.py`）
 

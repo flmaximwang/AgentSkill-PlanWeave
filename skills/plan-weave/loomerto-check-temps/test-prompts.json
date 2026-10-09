@@ -7,7 +7,7 @@
   {
     "id": 2,
     "prompt": "帮我看看这个 plan 的临时文件有没有声明、有没有人负责删。",
-    "expected": "跑本 skill 的脚本，把三问分开答并给证据：①有没有生产证据 ②声明在哪（doc 声明行 / 产物字段指向临时路径 / temps 字段）③收尾节点是否存在且在流程上排在所有生产块之后、判据可核验；缺件时给出可直接复制的 plan.py task new/block new/block describe 命令。"
+    "expected": "跑本 skill 的脚本，把三问分开答并给证据：①有没有生产证据 ②声明在哪（doc 声明行 / 产物字段指向临时路径 / temps 字段）③收尾节点是否存在且在流程上排在所有生产块之后、判据可核验；缺件时给出可直接复制的 plan.py task new/block add/block set_doc 命令。"
   },
   {
     "id": 3,
@@ -17,7 +17,7 @@
   {
     "id": 4,
     "prompt": "plan 快收尾了，帮我在最后加一个清理临时文件的节点，先告诉我现在缺什么。",
-    "expected": "先跑校验拿到结论与证据，再按工具给的骨架补 plan：py task new 建收尾任务节点 → py block new 在它下面建「删除本轮临时文件」并写清单与可核验判据（test ! -e 为空）→ py block describe 把「临时文件：…」声明写回生产块 doc；改完重跑，exit 0 且不是 ❌。"
+    "expected": "先跑校验拿到结论与证据，再按工具给的骨架补 plan：py task new 建收尾任务节点 → py block add 在它下面建「删除本轮临时文件」并写清单与可核验判据（test ! -e 为空）→ py block set_doc 把「临时文件：…」声明写回生产块 doc；改完重跑，exit 0 且不是 ❌。"
   },
   {
     "id": 5,

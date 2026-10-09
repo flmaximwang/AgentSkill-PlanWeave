@@ -48,11 +48,11 @@ metadata:
 3. **按建议补 plan**（`loomerto` 现成命令，不需要改模型；工具按你的 plan 现算任务号与依赖块）：
    ```
    loomerto task new <slug> --title "清理本轮临时文件" --owner <谁> --deps <最后一个生产任务>
-   loomerto block new <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
+   loomerto block add <slug> --task T-00N --title "删除本轮临时文件" --kind impl \
       --doc "本轮产生的临时文件：<逐项列路径/glob>（产生自 <生产块 id>）" \
       --done_when "逐项给出归属（已在别处存在 / 不再需要），删除后 test ! -e 为空" \
       --deps <最后一个生产块>
-   loomerto block describe <slug> <生产块 id> --doc "<原 doc>⏎临时文件：<路径/glob>"
+   loomerto block set_doc <slug> <生产块 id> "<原 doc>⏎临时文件：<路径/glob>"
    ```
 4. **重跑**：改完再跑一次；`exit 0` 且结论不是 ❌ 才算过。
 
@@ -93,7 +93,7 @@ python3 "$C" <slug> --plans-root <dir>  # 不在本 profile 的 plans 目录里�
 - **「收尾」单独不算清理语义**：drive-sync 有一块叫「2019 账本收尾」，那是收尾某件事，不是清文件。
 - **位置判据是软的，所以只报 ⚠️**：收尾节点是否「晚于所有生产块」按 `plan.json` 里的顺序
   （任务序 → 块序）算，而生产块集合来自文本证据、可能有噪声 ⇒ 位置偏早时**点名**晚于它的块，让人判。
-- **`loomerto` 改不了块的位置**：`set` 只能改状态与文档；移位置要 `expand` / `collapse` 或重建块
+- **`loomerto` 改不了块的位置**：`set_status` 只能改状态、`set_doc` 只能改文档；移位置要 `expand` / `compress` 或重建块
   （见 `loomerto-plan`）。
 - **声明有四种写法，任一即算**：① 块 doc 里一行 `临时文件：<路径/glob>`；② 产物（`artifacts`）字段
   指向临时路径（`/tmp`、`scratch`、`_migrate` …）；③ `temps` / `tmp_paths` 结构化字段；④ plan 的 goal 里

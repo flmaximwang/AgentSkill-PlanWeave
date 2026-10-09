@@ -1,9 +1,12 @@
 # `loomerto` 命令行参考（现状清单）
 
-> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-08 · 代码基线 `0e153a1`，分支
-> `feat/block-deps` —— 这一版只加了**一条命令 `block deps`**（事后改块的前置依赖，见
-> [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-22）；命令面其余部分与 `f9b91b0`（分支 `feat/block-schema`，
-> 动的是「块的形状怎么声明」：`model.BLOCK_FIELDS` + `new_block()` + `normalize_block()`，R-19）逐字节相同）。
+> **这份文件是 CLI 面的现状**，逐条从代码里的 `argparse` 取（2026-10-09 · 代码基线 `804a898`，分支
+> `feat/block-cmd-surface` —— 这一版是**命令面重排**（见
+> [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-23）：`block` 组按「结构 → 粒度 → 读 → 接线 → 身份 → 属性」
+> 重排并改名（`new`→`add`、`rm`→`remove`、`set`→`set_status`、`collapse`→`compress`，旧名一律退 2），
+> `describe` 拆成**一条属性一条命令**（`set_title` / `set_doc` / `set_type` / `set_audit`）、新增
+> `set_input` / `set_output` / `set_command` 三条属性命令与 `block bypass`；命令面其余部分与 `0e153a1`
+> （分支 `feat/block-deps`，只加了 `block deps`，R-22）逐字节相同）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
 > [`../skills/plan-weave/loomerto-plan/SKILL.md`](../skills/plan-weave/loomerto-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
@@ -11,8 +14,10 @@
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
 > for c in "plan new" "task new" \
 >          "task set" "task rm" "task show" \
->          "block new" "block insert" "block set" "block describe" "block assign" "block deps" "block move" \
->          "block expand" "block collapse" "block rm" "block show"; do loomerto $c --help; done
+>          "block add" "block remove" "block insert" "block bypass" "block expand" "block compress" "block show" \
+>          "block deps" "block assign" "block move" \
+>          "block set_type" "block set_title" "block set_doc" "block set_status" \
+>          "block set_input" "block set_output" "block set_command" "block set_audit"; do loomerto $c --help; done
 > ```
 
 ## 0. 怎么调用
@@ -20,6 +25,32 @@
 **一级命令 = 对象或全局动作，动作一律放二级**：`plan` / `task` / `block` 是**分组**（各自带子命令表），
 `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 是单层命令 —— 共 12 个一级名字。
 别名只给读命令的顺手写法：`info` = `task show` / `block show`，`threads` = `workers`。
+
+**`block` 组按这个顺序排**（R-23，`block --help` 里逐条可见）：
+
+| # | 命令 | 干什么 |
+|---|---|---|
+| 1 | `add` | 往一条任务**末尾**加块（旧名 `new`） |
+| 2 | `remove` | 真删一个块（旧名 `rm`；被引用时默认拒删，要连同接线改对走 `bypass`） |
+| 3 | `insert` | 插到某个块之前/之后（前后接线一次改对） |
+| 4 | `bypass` | 把一个**中间块**从链上摘掉，前面直接接后面 |
+| 5 | `expand` | 一个块 → 一个任务（块原地成为第一步） |
+| 6 | `compress` | 一个任务 → 一个块（旧名 `collapse`，**旧名已删**） |
+| 7 | `show` | 看一个块（只读；`info` 是别名） |
+| 8 | `deps` | 改块的前置依赖（接线，不是字段） |
+| 9 | `assign` | 把块指派给某个参与方 |
+| 10 | `move` | 把块换到另一条任务（泳道） |
+| 11 | `set_type` | 改块类型（`impl` / `review` / `decision` / `research`） |
+| 12 | `set_title` | 改标题（不能清空） |
+| 13 | `set_doc` | 改「做什么」 |
+| 14 | `set_status` | 改状态 + 登记谁在做 / 子代理线程（旧名 `set`） |
+| 15 | `set_input` | 改「输入」：这一步吃什么 |
+| 16 | `set_output` | 改「输出」：这一步吐什么 |
+| 17 | `set_command` | 改「命令」：这一步具体跑什么 |
+| 18 | `set_audit` | 改「判据」：可核验的验收标准 |
+
+11–18 是**一条属性一条命令**（`block set_<属性> <块ref> <值>`）：值**整组替换**、留空 = 清空
+（标题除外），没有变化就退 2 且一个字不写。加一条属性的办法见 `cli._SET_ATTRS`。
 
 三种等价写法（实现都在仓库根的 `loomerto` 包里，见 [`architecture.md`](architecture.md)）：
 
@@ -37,24 +68,27 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 - **一份 plan 在哪，永远由调用方说清** —— loomerto 不认任何 harness 的目录，也**没有 profile 这个概念**：
   - `--plan <plan 数据文件>`（= `$LOOMERTO_PLAN_FILE`）：只认这一份；**此后命令里不写 slug**。
     给目录（或目录路径）也行，按其中的 `plan.json` 算；数据文件叫什么名都行（`mine.json` 也可以）。
-    例：`loomerto --plan ./plan.json block set T-001#B-002 done`。
+    例：`loomerto --plan ./plan.json block set_status T-001#B-002 done`。
   - `--plans-root <目录>`（= `$LOOMERTO_PLANS_ROOT`）：一份 plan 库（里面每个 slug 一个目录）；命令里**要 slug**。
-    例：`loomerto --plans-root ~/plans block set my-plan T-001#B-002 done`。
+    例：`loomerto --plans-root ~/plans block set_status my-plan T-001#B-002 done`。
   - 两个都不给：按**当前目录的 `plan.json`** 算（它存在才认，等价于 `--plan ./plan.json`）；都没有就退 2
     并把该给什么打印出来。`plan new` 必须显式说落在哪（`--plan <路径>/plan.json` 或 `--plans-root <目录>` + slug）。
   - 两个都给时**按 `--plan` 算**（打一行 ⚠）。**全局旗标必须写在子命令之前**（写后面会被当成未知参数）；
     `--no-render` = 只改数据不刷视图。
 - **文件模式的位置参数左移一位**：命令的第一个位置参数本来是 `slug`，给了 `--plan` 就不写它 ——
-  `block set <slug> <ref> <status>` → `<ref> <status>`、`block show|rm|insert|move|expand|collapse|deps <slug> <ref>` → `<ref>`、
-  `task set <slug> <ref> <status>` → `<ref> <status>`、`task show|rm <slug> <ref>` → `<ref>`、
+  `block set_status <slug> <ref> <状态>` → `<ref> <状态>`、
+  `block set_title|set_doc|set_type|set_input|set_output|set_command|set_audit <slug> <ref> <值>` → `<ref> <值>`、
+  `block show|remove|insert|bypass|move|expand|compress|deps <slug> <ref>` → `<ref>`、
+  `task set <slug> <ref> <状态>` → `<ref> <状态>`、`task show|rm <slug> <ref>` → `<ref>`、
   `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
-  `plan new` / `task new` / `block new`）文件模式下**不写位置参数**。多写一个（如
+  `plan new` / `task new` / `block add`）文件模式下**不写位置参数**。多写一个（如
   `block show myplan T-003#B-004`）退 2，并点明「文件模式下不要再写 slug」。
-  `set` 的 `<状态>` 是唯一**可以留空**的格子（只给 `--unset` 清线程登记时）。
+  两个格子可以留空：`set_status` 的 `<状态>`（只给 `--unset` 清线程登记时）与 `set_*` 的 `<值>`
+  （= 把那个属性清空）。
 - `list`：给了 `--plan` 就只列这一份；否则列 `--plans-root` 库里的全部。
 - `ref` 的写法：`T-002`（任务）/ `T-002#B-001`（块）/ `B-001`（块内唯一后缀）。
-- **跨组错用会给人话错误**（退 2）：`task set T-001#B-001` 会说「这是块不是任务 —— 块状态用 `block set`」，
-  `block rm T-002` 会说「这是任务不是块 —— 连块一起删用 `task rm`」。命令名字面量按对象选，不对就当场点明。
+- **跨组错用会给人话错误**（退 2）：`task set T-001#B-001` 会说「这是块不是任务 —— 块状态用 `block set_status`」，
+  `block remove T-002` 会说「这是任务不是块 —— 连块一起删用 `task rm`」。命令名字面量按对象选，不对就当场点明。
 - **退出码**：参数错、找不到对象 → **2**；`check` 发现图错误 → **1**；`workers` 发现 ⚠/❌ → **1**；其余 → **0**。
   出错原因走 stderr（中文），stdout 只放给人/给 agent 读的结果。
 
@@ -72,11 +106,13 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 `py task new <slug> --title TITLE [--id T-00N] [--owner x] [--deps T-001 …] [--note "…"]`
 - `--deps` 是**任务级**依赖；开工条件 = 那些任务的**全部**块都 done。
 
-### `block new` — 往一条任务**末尾**加块（可独立认领、可评审的工作）
-`py block new <slug> --task T-001 --title "…" [--kind impl|review|decision|research] [--doc "做什么"] [--done-when "判据"]… [--deps T-00N#B-00N …] [--owner x] [--review-of T-00N#B-00N] [--status 状态]`
+### `block add` — 往一条任务**末尾**加块（可独立认领、可评审的工作）
+`py block add <slug> --task T-001 --title "…" [--kind impl|review|decision|research] [--doc "做什么"] [--done-when "判据"]… [--deps T-00N#B-00N …] [--owner x] [--review-of T-00N#B-00N] [--status 状态]`
 - **`--status` 默认 `blocked`（=待批准，等有人点头）**：只有 AI 判断这块无需审批就能干，才显式给
   `--status pending`。`block expand --step` 追加的步骤不在此列 —— 它们是「已经批过的那条活」的后续，仍是 `pending`。
 - `doc`（做什么）与 `done_when`（**可核验**的判据）是块的本体；没有判据的块不许建。
+  另外三个属性（`input` / `output` / `command`）建块时不给，事后用 `block set_input` /
+  `set_output` / `set_command` 写（或者建完就地 `set_*`）。
 - 要插在**中间**（不是追加到末尾）用 `block insert`；块的 `deps` 建好之后要改走 **`block deps`**（见下）。
 
 ## 2. 结构编辑
@@ -90,14 +126,25 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
     锚块的下游不用动 —— 顺序仍是 `… → 新块 → 锚块 → 下游`。
   - 插在锚块**之后**：新块等锚块；原来等锚块（或评审锚块）的改成等新块 ——
     `… → 锚块 → 新块 → 下游`（不这么改的话下游会在新块还没做完时就开跑）。
-- 认领人默认沿用锚块的（`--owner` 可覆盖）；`--status` 同 `block new`（默认 `blocked`）。
+- 认领人默认沿用锚块的（`--owner` 可覆盖）；`--status` 同 `block add`（默认 `blocked`）。
 - 成环则报错且一个字不写；`--dry-run` 只打印会改什么（改的是内存副本，文件一个字节都不动）。
 
-### `block rm` — 真删一个块（取消 ≠ 删除）
-`py block rm <slug> <块ref> [--note "为什么删"] [--force]`
+### `block remove` — 真删一个块（取消 ≠ 删除）
+`py block remove <slug> <块ref> [--note "为什么删"] [--force]`
 - 被别的块当依赖/评审对象时**默认拒删**（列出是哪些块，`--force` 才删）。
 - 删**块**不会自动重接引用：`--force` 留下的 `deps` / `review_of` 会变成悬空（`check` 会报）。
-  只想把块换个地方就先用 `block move`（它会把引用一起改对）。
+  想把引用一起改对就用 **`block bypass`**（下一步要接给谁它算得出来），只想把块换个地方用 `block move`。
+
+### `block bypass` — 把一个**中间块**从链上摘掉（前面直接接后面）
+`py block bypass <slug> <块ref> [--note "为什么绕过"]`
+- `A → B → C` 里绕过 `B` ⇒ `A → C`：**B 自己等的那几条前置**（它的 `deps` + `review_of`）直接接给
+  「原来等 B 的块」。
+- 与 `block remove` 的分工：`remove` 见有人引用就停手（要人加 `--force` 自己承担悬空），`bypass`
+  的整个意思就是**替你把那几处接线改对再删** —— 图上不留悬空，也不会凭空少掉一段前置。
+- 两种退化情形**照做但打 ⚠**：B 自己谁也不等（下游成了新链头）、没人等 B（等于一次 `remove`）。
+- 唯一拒改的一种：有块**评审**的就是 B，而 B 自己不等任何东西 —— 那会留下一个没头没尾的评审
+  （`check` 会一直报）；先给那个块换个评审对象，或改走 `block remove --force`。
+- 命令打印：它等的前置 → 直接接给了谁，外加上面那几行 ⚠。
 
 ### `block move` — 把一个块换到另一条任务（泳道）
 `py block move <slug> <块ref> --task T-00N [--index N] [--note "为什么移"]`
@@ -106,7 +153,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   历史字段（`folded_from` / `runs[].block`）是记录，不动。
 - `--index N` = 插到目标任务的第几位（0 起）；不给就追加到末尾。**同一条任务内**（`--task` 给的是它自己）
   只改先后，此时 id 与接线都不动 —— 等价 `reorder`，画布上的同泳道拖动走的就是这条。
-- **成环则拒改，且一个字都不写**（与 `block expand` / `block collapse` 同一道闸）。最容易踩的一种：目标任务的
+- **成环则拒改，且一个字都不写**（与 `block expand` / `block compress` 同一道闸）。最容易踩的一种：目标任务的
   任务级 `deps` 在块搬进来后会落到它身上，而源任务里正好有块等它 —— 报错会点名是哪条任务级依赖。
 - 源任务被搬空**不删任务**（空泳道留着）；删任务走 `task rm`。
 - 命令会打印换了什么：新 id、哪些块改等它、目标任务的任务级依赖从此算它的前置、源任务是否空了。
@@ -122,16 +169,16 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 - 前后接线一次改对：等这个块的改等**新链尾**，它自己的前置成为第一步的前置；成环则报错且一个字不写。
 - 展开已完成/已取消的块 = **把那段活重新打开**（命令会打 ⚠，不拦）。
 
-### `block collapse` — 一个任务 → 一个块（`compress` 是它的别名）
-`py block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--title …] [--doc …] [--done-when …]… [--kind …] [--owner x] [--note …] [--force] [--dry-run]`
-- 作用对象是**任务**（它和 `block expand` 互为逆操作，所以归在 `block` 组里）；给块 ref 会退 2 并点明用 `block rm`。
+### `block compress` — 一个任务 → 一个块（旧名 `collapse` 已删）
+`py block compress <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--title …] [--doc …] [--done-when …]… [--kind …] [--owner x] [--note …] [--force] [--dry-run]`
+- 作用对象是**任务**（它和 `block expand` 互为逆操作，所以归在 `block` 组里）；给块 ref 会退 2 并点明用 `block remove`。
 - 落点按 `--keep-task` → `--into` → 回展开前的位置 → 唯一前置任务；还说不清就报错列候选（不猜）。
 - 各块状态不一致时默认拒压（`--force` 才压，取最靠前的那个状态）。
 
-## 3. 状态与身份
+## 3. 状态、身份与属性
 
-### `block set` — 改块状态（**同一个入口**登记谁在做 + 那条子代理线程）
-`py block set <slug> <块ref> <状态> [--by 谁] [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--artifact 路径]… [--doc "…"] [--done-when "…"]… [--actor 谁]`
+### `block set_status` — 改块状态（**同一个入口**登记谁在做 + 那条子代理线程；旧名 `set`）
+`py block set_status <slug> <块ref> <状态> [--by 谁] [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--artifact 路径]… [--doc "…"] [--done-when "…"]… [--actor 谁]`
 
 ### `task set` — 改任务状态（在途时才登记在做的人与线程）
 `py task set <slug> <任务ref> <状态> [--by 谁] [--delegation …] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--actor 谁]`
@@ -143,7 +190,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   **`claimed`（已认领）**——「有人接了、还没开干」。所以给一个待认领的块 `assign --to x`（或 `set … --owner x`）
   之后它就显示成「已认领」；要让它回到「待认领」（谁都有空谁接）就 `block assign <ref> --unset`。
   `等前置` / `待批准` 可以有 `owner`（先派活、或写「等谁点头」），`已完成` 留着 `owner` = 谁做的。
-- **参数按状态卡**（`set` 一个入口同时管状态与身份，所以给错状态的旗标会退 2 并列出该状态收什么）：
+- **参数按状态卡**（`set_status` 一个入口同时管状态与身份，所以给错状态的旗标会退 2 并列出该状态收什么）：
 
   | 状态 | 收哪些旗标（除通用的 `--actor`） |
   |---|---|
@@ -154,8 +201,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   | 任务 `running` | `--owner --note --at --by --delegation --task-index --transcript` |
   | 任务 `pending` / `done` / `blocked` / `cancelled` | `--owner --note --at` |
 
-  例：`block set X done --delegation d1` → 「块状态 done 不收 --delegation —— 它收 --artifact、--at、--by、…」。
-- 打回 = `block set <块> claimed --note "<为什么打回>"`；`--note` 会落进 `feedback`，返工次数由图上的 `⟲N` 显示。
+  例：`block set_status X done --delegation d1` → 「块状态 done 不收 --delegation —— 它收 --artifact、--at、--by、…」。
+- 打回 = `block set_status <块> claimed --note "<为什么打回>"`；`--note` 会落进 `feedback`，返工次数由图上的 `⟲N` 显示。
 - `--at` 用于补记过去的时间（别假装是现在）。
 - **会自动记「谁在做」**：改为 `claimed`/`running`/`review` 时把 `--by`（没给就用 owner）写进 `exec.by`；
   **换人**（`--by` 与原来不同）会连带清掉旧的 `delegation`/`transcript`；改为 `done`/`cancelled`/`pending` 会清空 `exec`。
@@ -169,18 +216,33 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   `<状态>` 与 `--unset` 同时给退 2（`done`/`cancelled`/`pending` 本来就会清登记）。
 - 目前是**自由登记**：不校验 `--by` 是不是协作者、也不是必须给 pid（R-04 待做）。
 
-### `block describe` — 改块的**详情**（不动状态，改动记进日志）
-`py block describe <slug> <块ref> [--title "…"] [--doc "…"] [--done-when "…"]… [--kind …] [--owner x] [--note "为什么改"]`
-- 只管「这块是什么」：标题 / 做什么 / 判据 / 类型（`--owner` 只作为兜底，换人用 `assign`）。
-- `--done-when` 一旦给了就是**整组替换**；什么都不给就退 2（没有字段要改）。
-- 与 `set` 分工：**状态与身份走 `set`，详情走 `describe`**；改了什么会进日志（`--note` 也记进去）。
+### `block set_title` / `set_doc` / `set_type` / `set_input` / `set_output` / `set_command` / `set_audit` — 改块的**一个属性**（一条命令一个属性）
+`py block set_<属性> <slug> <块ref> [<值>] [--note "为什么改"]`
+- 形状统一：值**整组替换**，给空（或留空）就清空那一格。各命令对应块的哪个键：
+
+  | 命令 | 块的键 | 是什么 |
+  |---|---|---|
+  | `set_title` | `title` | 标题（**不能清空** —— 块必须有标题） |
+  | `set_doc` | `doc` | 做什么 |
+  | `set_type` | `kind` | 类型：`impl` / `review` / `decision` / `research` |
+  | `set_input` | `input` | 输入：这一步吃什么（数据 / 路径 / 前提） |
+  | `set_output` | `output` | 输出：这一步吐什么（产物长什么样） |
+  | `set_command` | `command` | 命令：这一步具体跑什么 |
+  | `set_audit` | `done_when` | 判据：可核验的验收标准，**多条用 `;` 分隔** |
+
+- 只管「这块是什么」：**不动状态、不动认领人、不动接线**。状态与身份走 `block set_status`，
+  认领人走 `block assign`，前置依赖走 `block deps`，位置与粒度走 `move` / `insert` / `expand` / `compress`。
+- **没有变化 ⇒ 退 2 且一个字都不写**（与 `set_deps` 同一纪律：「我明明改了」而文件没动，比报错难查）。
+- 改动进日志（`kind=block`，`--note` 也记进去）。加一条新属性：`model.BLOCK_FIELDS` 一处
+  （新键）+ `cli._SET_ATTRS` 一处 + 在 `_parser()` 的 block 组里按顺序 `_add_set_attr()`。
+- 块建出来时只有 `title` / `doc` / `done_when` 可以给（见 `block add`），其余属性建完再设。
 
 ### `block assign` — 把一个块指派给某个参与方
 `py block assign <slug> <块ref> [--to <参与方 id> | --unset] [--note "为什么"]`
 - 只改 `owner`（认领人），**不动状态**，改动记进日志（`kind=assign`）。
 - `--to / --unset` 必须给一个且只给一个（`--unset` = 清掉指派回「未指派」）。
 - `--to` 不在 `plan.json` 的 `participants` 里时**打一行 ⚠ 照记**（R-05 的强制校验还没做）；
-  块的「在做的人」与认领人不一致时再打一行 ⚠（换在做的人走 `set … <在途状态> --by`）。
+  块的「在做的人」与认领人不一致时再打一行 ⚠（换在做的人走 `set_status … <在途状态> --by`）。
 
 ### `block deps` — 改一个块的**前置依赖**（接线，不是字段）
 `py block deps <slug> <块ref> [--deps <ref…> | --add <ref…> | --rm <ref…>] [--note "为什么改"]`
@@ -190,15 +252,16 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   ① **每条依赖必须已经存在**（悬空依赖 `check` 会一直报错；把块挂在那儿永远等不到）——
   依赖写成任务（`T-002`）也拒（块只能等另一个块；要等一整条任务就把它写成任务级依赖）；
   ② 引用当场**规整成规范 id 并去重**（`B-003` → `T-002#B-003`）；
-  ③ 改完**查环**：成环退 2，且**一个字都不写**（与 `block move` / `insert` / `expand` / `collapse` 同一纪律）。
+  ③ 改完**查环**：成环退 2，且**一个字都不写**（与 `block move` / `insert` / `expand` / `compress` 同一纪律）。
 - `--rm` 一条本来就不等的 = 什么都没变 ⇒ **退 2**（不许静默成功：那说明 ref 或对象写错了）。
 - 改完打一行 `✓ <块> 的前置：旧 → 新`，另有两行 ⚠ 按需出现：新等上的块是 `cancelled`（它不会变 done，
   这块会一直「等前置」）、所属任务有**任务级**依赖（那几条也算它的前置，`block show` 里标「任务级」）。
-- 改动记进日志（`kind=deps`）；状态 / 认领 / 详情一概不动（那是 `set` / `assign` / `describe` 的事）。
-  换泳道仍走 `block move`、换粒度走 `expand` / `collapse`（它们顺手重接接线）。
+- 改动记进日志（`kind=deps`）；状态 / 认领 / 属性一概不动（那是 `set_status` / `assign` / `set_*` 的事）。
+  换泳道仍走 `block move`、换粒度走 `expand` / `compress`（它们顺手重接接线）；把一个中间块连着接线
+  一起摘掉走 `block bypass`。
 
 ### `note` — 写一条总结/决定进日志
-`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|insert|assign|deps|remove|expand|collapse] [--ref T-00N#B-00N] [--actor 谁]`
+`py note <slug> "…" [--kind summary|decision|reminder|created|task|block|status|insert|assign|deps|remove|move|bypass|expand|collapse|compress] [--ref T-00N#B-00N] [--actor 谁]`
 
 ## 4. 看
 
@@ -211,7 +274,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 ### `block show` — 看一个块的详细信息（**只读**；`info` 是它的别名）
 `py block show <slug> <块ref> [--json] [--runs N]`
 - 状态（+自何时）· 类型 · 归属任务 · 认领人（+认领时刻）· 在做的人（+线程号与转录路径）·
-  做什么 · 判据 · 依赖（含任务级展开）· 评审对象 · 返工 `⟲N` 与 feedback · 产物 · run 记录 · 三视图路径。
+  做什么 · 输入 · 输出 · 命令 · 判据 · 依赖（含任务级展开）· 评审对象 · 返工 `⟲N` 与 feedback ·
+  产物 · run 记录 · 三视图路径（`input`/`output`/`command` 空着就不打那几行）。
 - `--json` 给 agent 读（字段名与 `plan.json` 对齐）；`--runs N` 只列最近 N 条 run（默认 5，`0` = 全列）。
 - **什么都不改**：不落盘、不重渲、不写日志。给任务 ref 会退 2 并点明用 `task show`。
 
@@ -254,7 +318,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 - 画布上能改：块的 标题 / 做什么 / 判据 / 认领人 / 类型 / **状态**（认领·开干·送审·打回·收工）、
   新建任务、新建块、**拖动卡片改同一条泳道里的先后**。
 - **不做**（故意的）：删块 / 删任务、直接改 `deps` / `review_of` —— 那些会一脚踩坏判据或接线；
-  走 `block rm` / `block insert` / `block expand` / `block collapse` / `block move` 更安全。
+  走 `block remove` / `block bypass` / `block insert` / `block expand` / `block compress` / `block move` 更安全。
   （**跨泳道拖动已经支持**：一次 `move` 换块 id 并把引用它的 `deps` / `review_of` 一次重接，成环则拒改。）理由与协议见 [`canvas-sync.md`](canvas-sync.md)。
 - **写回**：每次改动都走 `edits`（改动的唯一实现）→ `store.commit()`，所以数据文件与三个视图**同时**更新；
   前端每次保存都带上自己读到的 `rev`（= `updated_at`），对不上回 **409** 并让人先刷新（不做自动合并）。

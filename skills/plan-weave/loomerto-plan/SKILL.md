@@ -51,10 +51,10 @@ metadata:
 2. **把剩下的活写成任务与块**：一个对象 / 一条工作线 = 一条泳道（`task`）；块要带 `doc`（做什么）与
    `done_when`（**别人能重跑**的判据）—— 判据写不成可核验的，说明这一块还没想清楚，别建。
 3. **按块派子代理**：一块一个子代理，派完立刻登记线程
-   `loomerto block set <slug> <块ref> running --by <谁> --delegation <deleg_id> --task-index N --transcript <转录路径>`。
+   `loomerto block set_status <slug> <块ref> running --by <谁> --delegation <deleg_id> --task-index N --transcript <转录路径>`。
    **子代理禁止起后台进程**（子代理退出时它的后台进程会接管 thread）；长活按目录 / 前缀分片、每条命令自带超时。
 4. **按块收工**：`loomerto workers <slug>` 看在途线程还在不在动、`loomerto check <slug>` 看图质量；
-   做完 `loomerto block set <slug> <块ref> done --artifact <产物绝对路径> --note "<做了什么>"`。
+   做完 `loomerto block set_status <slug> <块ref> done --artifact <产物绝对路径> --note "<做了什么>"`。
 5. **回到聊天只留三样**：结论 + 该谁动（块 id）+ 那行 `file://…/plan.html`。
 
 ## 唯一真相与目录
@@ -93,9 +93,9 @@ loomerto --plan <plan 数据文件> <子命令> …          # 只认这一份�
 |---|---|---|
 | plan | 一个协作目标 | 一个 slug 一个目录 |
 | task（节点） | 一条工作线 | 可带任务级 `deps`（别的任务） |
-| block（文档） | 一份可独立认领、可评审的工作 | 有 `doc`（做什么）和 `done_when`（判据），**没有判据的块不许建** |
+| block（文档） | 一份可独立认领、可评审的工作 | 有 `doc`（做什么）和 `done_when`（判据），**没有判据的块不许建**；另三个可选属性 `input`（吃什么）/ `output`（吐什么）/ `command`（具体跑什么）—— 各由 `block set_input` / `set_output` / `set_command` 一条属性一条命令地写 |
 | run | 一次执行记录 | 改状态时自动追加，带 `by` 和 `note` |
-| exec | **谁在做 + 那条子代理线程**（认领之外的第二个身份） | 只记现在时：`by` / `delegation` / `task_index` / `transcript` / `started`；由 `block set <ref> <在途状态> --by … --delegation …` 写，收工自动清掉 |
+| exec | **谁在做 + 那条子代理线程**（认领之外的第二个身份） | 只记现在时：`by` / `delegation` / `task_index` / `transcript` / `started`；由 `block set_status <ref> <在途状态> --by … --delegation …` 写，收工自动清掉 |
 
 **派生状态，不要手填**：block 存 `pending/claimed/running/review/done/blocked/cancelled`；`ready` 与
 `waiting` 由依赖**与认领**算出来（依赖全 done **且没人认领** ⇒ `ready` 待认领；依赖全 done **且已经有
@@ -167,7 +167,7 @@ $LT block insert <slug> <锚块ref> [--before|--after] --title "…" [--doc "…
                                     # 插在锚块之前/之后，把前后接线一次改对（不给就是「之前」）
 $LT block expand <slug> <块ref> [--title "…"] [--owner x] [--note "为什么"]
       [--step "标题 :: 做什么 :: 判据1;判据2 :: kind"]...   # 可多次，按顺序追加
-$LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
+$LT block compress <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
       [--title …] [--doc …] [--done-when …] [--kind impl|review|decision|research]
       [--force] [--dry-run]
 ```
@@ -175,7 +175,7 @@ $LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 **`block insert`：往中间插一步。** 「某个节点之后 / 两个节点之间 / 最早节点之前」都靠它：插在锚块
 **之前**时，新块接手锚块原来等的东西（它的显式 `deps` + `review_of`），锚块改成只等新块；插在锚块
 **之后**时，新块等锚块，原来等锚块（或评审锚块）的改成等新块 —— 顺序与依赖一起改对；不这么改，
-下游会在新块还没做完时就开跑。锚块的认领人默认被沿用，`--status` 同 `block new`（默认 `blocked`）。
+下游会在新块还没做完时就开跑。锚块的认领人默认被沿用，`--status` 同 `block add`（默认 `blocked`）。
 
 **`block expand`：一个块 → 一个任务。** 原块**原地升级**成新任务的第一步（标题/doc/判据/runs 逐字保留，
 只换 id），`--step` 给的步骤按顺序串在后面（第 N 步依赖第 N−1 步）。新任务插在原任务之后
@@ -186,12 +186,12 @@ $LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
   所以那条不会再重复欠一条 `deps`。
 - **原任务空掉就清掉**：这个块是任务里最后一块时，任务被删掉，别的任务对它的**任务级依赖转给新任务**
   —— 语义等价（原来等「那个任务的所有块」，现在等新链的全部块），不转就是一条悬空引用。
-- `expanded_from` 记下「从哪个任务的第几块展开来的」，`collapse` 靠它回原位。
+- `expanded_from` 记下「从哪个任务的第几块展开来的」，`compress` 靠它回原位。
 - **展开一个已完成/已取消的块 = 把那段活重新打开**：新加的步骤是 `pending`，等它的块改等新步骤 ⇒
   下游从「已就绪」退回「等前置」。命令会为此打一行 ⚠ 并写进日志（**不拦** —— 把做完的活拆成几步
   本来就是「还有活」这个意思）；只想补记录，就把新步骤也 `set … done`。
 
-**`collapse`：一个任务 → 一个块。** 块必须住在某个任务里，所以「压」要交代落点，按这个顺序定：
+**`compress`：一个任务 → 一个块。** 块必须住在某个任务里，所以「压」要交代落点，按这个顺序定：
 
 1. `--keep-task`：留在本任务，只剩这一块（任务还在；插在第一块原来的位置）；
 2. `--into <块ref>`：插到那个块之后（在那块所在的任务里）；`--into <任务ref>`：追加到那个任务末尾；
@@ -207,7 +207,7 @@ $LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
   （`pending < blocked < claimed < running < review < done`）—— 还没做完就不许记成做完。
 - **接线**：各步对外部的前置合并成新块的 `deps`（任务内部的前置消掉）；等这些块的（含 `review_of`）
   改等新块；被删任务的任务级依赖摘掉、改由下游块显式等新块。
-- **回原位可能正好拿回原来的 id**：id 取「当前最小的空位」，所以 expand → collapse 走一趟，
+- **回原位可能正好拿回原来的 id**：id 取「当前最小的空位」，所以 expand → compress 走一趟，
   块往往还叫 `T-001#B-002`（锚点是位置，不是身份）。
 
 **`block move`：把一个块换到另一条任务（泳道）。** 块 id 就是它的位置，所以换泳道 = 换 id
@@ -240,23 +240,23 @@ $LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 
 | 问 | 看哪 | 怎么写 |
 |---|---|---|
-| 谁认领了 | 块的 `owner` + runs 里最后一条进入 `claimed` 的记录 | `loomerto block set <slug> <ref> claimed --by <谁> [--owner <谁>]`；只换人不改状态用 `loomerto block assign <slug> <ref> --to <谁>`（`--unset` 清掉） |
-| 谁在做 | `exec.by` | `loomerto block set … running --by <谁>` 自动写上；换人时旧线程登记会被清掉 |
-| 线程在哪 | `exec.delegation` + `exec.task_index` + `exec.transcript` | `loomerto block set <slug> <ref> running --by <谁> --delegation deleg_xxxxxxxx [--task-index N]` |
+| 谁认领了 | 块的 `owner` + runs 里最后一条进入 `claimed` 的记录 | `loomerto block set_status <slug> <ref> claimed --by <谁> [--owner <谁>]`；只换人不改状态用 `loomerto block assign <slug> <ref> --to <谁>`（`--unset` 清掉） |
+| 谁在做 | `exec.by` | `loomerto block set_status … running --by <谁>` 自动写上；换人时旧线程登记会被清掉 |
+| 线程在哪 | `exec.delegation` + `exec.task_index` + `exec.transcript` | `loomerto block set_status <slug> <ref> running --by <谁> --delegation deleg_xxxxxxxx [--task-index N]` |
 
 ```bash
-$LT block set <slug> T-002#B-001 running --by default --delegation deleg_05e3c787 --task-index 0 \
+$LT block set_status <slug> T-002#B-001 running --by default --delegation deleg_05e3c787 --task-index 0 \
         --transcript <转录文件绝对路径> --note "前半段：写脚本"
                                     # 转录在哪由你给（Hermes 侧 = <hermes home>/cache/delegation/live/<deleg>/task-<n>.log）
                                     # 不给 --transcript 就只记线程号，workers 只能报「❓ 看不到」
-$LT block set <slug> T-002#B-001 --unset   # 线程收工 / 交回别人（状态不动，<状态> 这时可以省）
+$LT block set_status <slug> T-002#B-001 --unset   # 线程收工 / 交回别人（状态不动，<状态> 这时可以省）
 $LT workers <slug>                   # ← 检查：每个在途块登记的线程还在动吗
 $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(含认领时刻) · 在做+线程+转录 · 判据 · run（只读）
 ```
 
 - **线程号从哪来**：`delegate_task` 返回的 `delegation_id`（`deleg_xxxxxxxx`）与它在该批次里的
   `task_index`（本文档一律写成 `deleg_05e3c787#0` 这种形式）。**转录路径由调用方登记**
-  （`block set … --transcript <路径>`）—— 包不猜 harness 的目录；Hermes 侧的对应写法是 hermes home 下的
+  （`block set_status … --transcript <路径>`）—— 包不猜 harness 的目录；Hermes 侧的对应写法是 hermes home 下的
   `cache/delegation/live/<delegation_id>/task-<n>.log`（default profile 的 home 是 `~/.hermes`，
   其余是 `~/.hermes/profiles/<名字>/`）。不给 `--transcript` 时只记线程号，`workers` 会报「❓ 看不到」。
 - **`workers` 七种结论，一个都不许合并**：`✅ 在动`（转录最近还在写）/ `⏳ 静默`（超 `--stale-min`
@@ -273,7 +273,7 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
 - **线程登记是现在时，不是简历**：收工（`done`/`cancelled`）或退回（`pending`）时 CLI 会自动清掉它；
   「谁做过的」留在该块的 `runs`（每条带 `by`）与日志里。
 - **线程登记短命，产物才长命**：live 转录 7 天后回收，所以线程结束前要把真正要留的证据写进块的
-  `artifacts` 或 run 的 `note`（`loomerto block set … --artifact <路径>`），别指望以后还能回读转录。
+  `artifacts` 或 run 的 `note`（`loomerto block set_status … --artifact <路径>`），别指望以后还能回读转录。
 
 ## 一次协作回合的固定动作
 
@@ -284,7 +284,7 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
 1. **读**：`loomerto current <slug>` —— 现在能动的块；先看这个再说话。
 2. **总结**：`loomerto note <slug> "<这一段发生了什么>" --actor <谁>`
    —— 只写真正发生的；拿不准的写成「待确认」。
-3. **改状态**：`loomerto block set <slug> T-002#B-002 running --by <谁> --note "<一句话>"`
+3. **改状态**：`loomerto block set_status <slug> T-002#B-002 running --by <谁> --note "<一句话>"`
    - 认领 → `claimed`；开干 → `running`；送审 → `review`；通过 → `done`；打回 → `claimed`
      （`--note` 会存成 `feedback`；打回默认就是原 owner 重做，所以不换人、不建新块）。
    - 参数按状态卡：线程登记（`--delegation` / `--task-index` / `--transcript`）只在 `claimed`/`running`/`review`
@@ -292,23 +292,23 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
    - 补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
 4. **验证**：`loomerto check <slug>` —— 环 / 悬空依赖 / 已认领却没写负责人 / 缺判据 / 悬置超时（悬置只数**存储**状态在途的块）。
    **有错误就别往下走**；告警要念给用户听。
-5. **登记线程**（把块派给子代理时）：`loomerto block set <slug> <ref> running --by <谁> --delegation <deleg_id>
+5. **登记线程**（把块派给子代理时）：`loomerto block set_status <slug> <ref> running --by <谁> --delegation <deleg_id>
    [--task-index N] [--transcript <路径>]` —— 之后随时 `loomerto workers <slug>` 就能看出这条线程是不是还在动
-   （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `block set … --unset`
+   （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `block set_status … --unset`
    （`set … done` 也会自动清）。
 6. **提醒**：`loomerto digest <slug> --to <参与方>`，纪律见 skill `loomerto-remind`。
 7. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
    - `loomerto-check-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
    - `loomerto-check-temps`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
-     `loomerto task new` / `loomerto block new` / `loomerto block set` 命令补一个收尾任务节点与「临时文件：…」声明。
+     `loomerto task new` / `loomerto block add` / `loomerto block set_status` 命令补一个收尾任务节点与「临时文件：…」声明。
    改完重跑；两条都要 `exit 0` 才往下走。
 
 改状态时 `loomerto` 会自动重渲染三个视图（`--no-render` 可跳过）。
 
 ## 踩过的坑
 
-- **`--no-render` 必须配对一句收尾 `render`**：批量写入时省渲染没问题，但忘了收尾，用户就会看着旧看板说「我没在 011 里看到新节点」（他已经这么报过一次）。一批写入串在一条命令里时，最后补 `loomerto render <slug>` 并读回 `PLAN.md`/`plan.html` 的 mtime 与节点标题，别只看命令的成功回显。**`--no-render` 还是全局旗标、得写在子命令之前**（`loomerto --no-render block new …`）；写在子命令之后会退 2 报 `unrecognized arguments: --no-render`。
-- **跑 CLI 走 `terminal`，别包进 `execute_code` / Python subprocess**：Hermes 的危险判定是**按命令字面量**匹配的（`rm -rf` 这类串会被标成 recursive delete）。在 `terminal` 里 smart approval 会自动放行，在 `execute_code` 里却会弹同意框——60 s 没人点就超时，整个脚本**一个字都不执行**（报 BLOCKED）。所以状态写入永远直接跑 `loomerto …`，而且 **note/doc 里也不要写字面量 `rm -rf`**（写「删除」），否则同一条 `block set` 会在另一条通道被拦下。
+- **`--no-render` 必须配对一句收尾 `render`**：批量写入时省渲染没问题，但忘了收尾，用户就会看着旧看板说「我没在 011 里看到新节点」（他已经这么报过一次）。一批写入串在一条命令里时，最后补 `loomerto render <slug>` 并读回 `PLAN.md`/`plan.html` 的 mtime 与节点标题，别只看命令的成功回显。**`--no-render` 还是全局旗标、得写在子命令之前**（`loomerto --no-render block add …`）；写在子命令之后会退 2 报 `unrecognized arguments: --no-render`。
+- **跑 CLI 走 `terminal`，别包进 `execute_code` / Python subprocess**：Hermes 的危险判定是**按命令字面量**匹配的（`rm -rf` 这类串会被标成 recursive delete）。在 `terminal` 里 smart approval 会自动放行，在 `execute_code` 里却会弹同意框——60 s 没人点就超时，整个脚本**一个字都不执行**（报 BLOCKED）。所以状态写入永远直接跑 `loomerto …`，而且 **note/doc 里也不要写字面量 `rm -rf`**（写「删除」），否则同一条 `block set_status` 会在另一条通道被拦下。
 
 ## 命令速查
 
@@ -316,7 +316,7 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
 # 唯一入口 = 装好的 loomerto 命令。plans 根由调用方交代（包不认任何 harness 的目录）：
 LT="loomerto --plans-root <本 profile 的 workspace/plans>"
 #   换成 --plan <plan 数据文件> 则只认这一份，此后命令里**不写 slug**（位置参数整体左移一位）
-#   例：loomerto --plan ./plan.json block set T-001#B-002 done
+#   例：loomerto --plan ./plan.json block set_status T-001#B-002 done
 # 一级命令 = 对象/全局动作，动作在二级：plan / task / block 是分组，其余是单层动作
 $LT list                                  # 所有 plan + 进度
 $LT plan new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
@@ -325,16 +325,19 @@ $LT task new <slug> --title "…" [--deps T-001] [--owner x]
 $LT task set <slug> <任务ref> <状态> [--by x] [--note "…"]        # 任务状态；线程登记只在 running 收
 $LT task show <slug> <任务ref> [--json]                           # 一条任务的详情（只读）
 $LT task rm <slug> <任务ref> [--force]                            # 真删任务（连带它的块）
-$LT block new <slug> --task T-001 --title "…" --kind impl|review|decision|research \
+$LT block add <slug> --task T-001 --title "…" --kind impl|review|decision|research \
    --doc "做什么" --done-when "可核验的判据" [--deps T-001#B-002] [--review-of T-001#B-002] \
    [--owner x] [--status 状态]      # --status 默认 blocked（待批准）；无需审批才显式给 pending
 $LT block insert <slug> <锚块ref> [--before|--after] --title "…" [--doc "…"] [--done-when "…"] \
    [--owner x] [--status 状态] [--dry-run]     # 插到某块之前/之后，接线一次改对
-$LT block set <slug> <ref> <状态> [--by x] [--note "…"] [--artifact <路径>] [--at ISO] \
+$LT block set_status <slug> <ref> <状态> [--by x] [--note "…"] [--artifact <路径>] [--at ISO] \
       [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--unset] \
       [--doc "…"] [--done-when "…"]   # 状态 + 谁在做 + 子代理线程一个入口；参数按状态卡
-$LT block describe <slug> <块ref> [--title "…"] [--doc "…"] [--done-when "…"] [--kind …] [--note "为什么"]
-                                      # 只改详情、不动状态（改了会进日志）
+$LT block set_title|set_doc|set_type|set_input|set_output|set_command|set_audit <slug> <块ref> "<值>"
+                                      # 一条属性一条命令：值整组替换、留空 = 清空（标题除外），
+                                      # 没有变化退 2 一个字不写。只改属性 —— 状态与身份走 set_status、
+                                      # 认领人走 assign、接线走 deps。set_type ∈ impl|review|decision|research；
+                                      # set_audit 的判据多条用 ; 分隔
 $LT block assign <slug> <块ref> [--to <参与方 id> | --unset] [--note "为什么"]
                                       # 指派/取消指派认领人（不动状态）
 $LT block deps <slug> <块ref> [--deps <一串ref> | --add <一串> | --rm <一串>] [--note "为什么"]
@@ -344,12 +347,14 @@ $LT workers <slug> [--stale-min 30] [--json]
                                          # 在途块的线程还在动吗（已结束/号记错 ⇒ exit 1）
 $LT block expand <slug> <块ref> [--title "…"] [--step "标题 :: 做什么 :: 判据1;判据2"] [--dry-run]
                                          # 一个块 → 一个任务（块成为第一步）
-$LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
+$LT block compress <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task] [--force] [--dry-run]
                                          # 一个任务 → 一个块（默认回展开前的位置）
 $LT block move <slug> <块ref> --task T-00N [--index N] [--note "…"]
                                          # 一个块 → 另一条任务（泳道）：换块 id + 重接 deps/review_of；
                                          # 成环则拒改（一个字不写）；源任务空了不删。画布上的跨泳道拖走这条
-$LT block rm <slug> <块ref> [--force]     # 真删一个块（被引用时默认拒删）
+$LT block remove <slug> <块ref> [--force]     # 真删一个块（被引用时默认拒删）
+$LT block bypass <slug> <块ref> [--note "…"]  # 把一个中间块从链上摘掉：它在等的前置直接接给原来等它的块
+                                      # （A→B→C ⇒ A→C）；替你把那几处引用改对再删，图上不留悬空
 $LT note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
                                          # --kind note 非法（退 2，会列出全部候选）；「这段发生了什么」用 summary
 $LT current <slug>                        # 现在该谁动
@@ -383,7 +388,7 @@ loomerto --plan <plan 数据文件> open      # 等价：loomerto open <plan 数
 - 每次改动走 `edits`（改动的唯一实现）→ `store.commit()`：数据文件与 `PLAN.md` / `plan.html` / `plan.canvas`
   **同时**更新；前端带 `rev`（= `updated_at`），对不上回 **409** —— 让人先「刷新」再改（**不做自动合并**）。
 - **不做**：删块 / 删任务、直接改 `deps` / `review_of` —— 那些会一脚踩坏判据或接线，
-  走 `block rm` / `block move` / `block expand` / `block collapse` / `block new` 更安全。
+  走 `block remove` / `block move` / `block expand` / `block compress` / `block add` 更安全。
 - 要接第二个前端（别的 web 服务 / 别的画布）就读协议：`docs/canvas-sync.md`。
 
 ## 交付给人的默认包（默认就给，不用等他要）
@@ -416,7 +421,7 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 - **每轮汇报带一行块进度 `<已完成>/<总数>`**：他在多轮里就是靠这个数看推进；改完状态 / 记完档就给，不用等他问。
 - **未经请求不提建议。** 原话「不用为我提出建议，直到我要求你」：汇报只给事实 + 该谁动；「要不要我顺手…」这类话在他
   问「怎么办 / 给个推荐」之前不要出现，方案与推荐留到他开口要的时候。
-- **自己起的在途块，产物落地就收工**：`block set <slug> <ref> done --owner <谁> --artifact <路径> --note "<举证>"`。
+- **自己起的在途块，产物落地就收工**：`block set_status <slug> <ref> done --owner <谁> --artifact <路径> --note "<举证>"`。
   裸挂 `running` 会让 `workers` 与悬置报告失真，也让人以为还有活在跑。
 
 ## 几条硬规则
@@ -449,16 +454,16 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 - 传播期内 `PUT /channels/<thread>/thread-members/@me` 也会 403，**它单独不能证明 thread 是私有的**。
 - 判断「提醒通道真的通了」的唯一判据不是 `hermes send` 回显 `sent`，而是**回读那条消息的 author.id**
   等于本 profile bot 自己的 user id（`/users/@me`）。否则可能发成了别的 profile 的 bot。
-- **`block set` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。**
-- **`note --kind note` 不存在**：合法 kind = `summary|decision|reminder|created|task|block|status|insert|assign|remove|move|expand|collapse`。写 `note` 会退 2 并把这串候选列出来；记「这一段发生了什么」用 `--kind summary`。同族提醒：**任何旗标被拒时，先读它自己打印的候选清单再重试** —— 换一个近义词继续猜（note→summary）会白多烧一轮。
-- **`block set … done` 的 `--artifact` 收多条：写完读回条数**（`block show <ref>`），只看到「✓ done」看不出少登记了哪条证据。
+- **`block set_status` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。**
+- **`note --kind note` 不存在**：合法 kind = `summary|decision|reminder|created|task|block|status|insert|assign|deps|remove|move|bypass|expand|collapse|compress`。写 `note` 会退 2 并把这串候选列出来；记「这一段发生了什么」用 `--kind summary`。同族提醒：**任何旗标被拒时，先读它自己打印的候选清单再重试** —— 换一个近义词继续猜（note→summary）会白多烧一轮。
+- **`block set_status … done` 的 `--artifact` 收多条：写完读回条数**（`block show <ref>`），只看到「✓ done」看不出少登记了哪条证据。
 - **「待认领」= 依赖就绪 且没人接**（2026-10-08 起）：一个块只要有负责人，依赖一就绪就显示成**已认领** ——
   别指望「先派活、还显示待认领」。想让它回到待认领（谁都有空谁接）就 `block assign <ref> --unset`。
   反过来 `等前置` / `待批准` 照样可以有 owner（先派活、写「等谁点头」）。
   「已认领 / 进行中 / 待评审 却没有负责人」会被 `check` 报 ⚠（谁接的没说清）。
   连带：泳道摘要（`task show` 的 `[已认领…]`）会把「只有已派活未开工的块」算成进行中；悬置超时与
   `workers` 只数**存储**状态在途的块，派生出来的已认领不进这两份报告。
-- **`block set` 会自动把 `--by` 写进 `exec.by`**（没给 `--by` 就落到 owner），所以「谁在做」不用另起一道仪式；
+- **`block set_status` 会自动把 `--by` 写进 `exec.by`**（没给 `--by` 就落到 owner），所以「谁在做」不用另起一道仪式；
   **换人（`--by` 与原来不同）会连带清掉旧的 `delegation`/`transcript`** —— 旧线程不再代表这一块，这是故意的。
 - **`workers` 是 `check` 的姊妹**：`check` 查图（环 / 悬空依赖 / 已认领却没写负责人），`workers` 查「干活的那个人」。
   只把 `⚠ 线程已结束` 与 `❌ 号记错` 当硬信号（退 1）；`❓ 看不到` 与 `➖` 是提示 —— 但它们出现时别默认「没事」，
@@ -467,31 +472,32 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
   「这块是谁做的、证据在哪」，写进 `artifacts` 与 run 的 `note`；线程登记只保证**现在**能查在动没在动。
 - **改一条已经建好的接线走 `block deps`**：`--add` / `--rm` / `--deps`（整组替换，给空即清空），
   三道闸都在一处 —— 依赖必须**已经存在**（悬空依赖 `check` 会一直报）、引用当场规整成规范 id 并去重、
-  改完**查环**（成环退 2 且一个字不写）。它是独立命令而不是给 `set` / `describe` 加旗标，因为「补一条依赖」
+  改完**查环**（成环退 2 且一个字不写）。它是独立命令而不是给 `set_status` / `set_doc` 加旗标，因为「补一条依赖」
   改的是**接线**（前后顺序），不是字段。**`--rm` 一条本来就不等的 = 什么都没变 ⇒ 退 2**，别把它当成功
   （说明你写的 ref 或对象不对）。改完它会打一行 ⚠：所属任务的**任务级**依赖也算它的前置（`block show` 里
-  标「任务级」的那几条）。换地方（换泳道）仍走 `block move`，换粒度走 `expand` / `collapse`（顺手重接）。
+  标「任务级」的那几条）。换地方（换泳道）仍走 `block move`，换粒度走 `expand` / `compress`（顺手重接）。
 - **一块要等齐 N 条上游时，`kind=review` 会永久留一条 ⚠**（`是评审块但没写 review_of`）：`--review-of` 只收**一条** ref ⇒ 等齐 N 条的那种校验/收尾步建 `kind=impl`，前置写成一个给全的 `--deps A B C`。别为了消掉告警硬给一个上游，那等于声明它只审那一条。
-- **让 N 个下游块间接等一个共享前置：把前置挂到链上中间那一块**（`block new <中间块> --deps <共享前置>`，下游只等中间块），比逐个给下游挂 `deps` 干净（逐个挂要用 `block deps <下游块> --add <共享前置>`，各写一条接线，多一片线）。
+- **让 N 个下游块间接等一个共享前置：把前置挂到链上中间那一块**（`block add <中间块> --deps <共享前置>`，下游只等中间块），比逐个给下游挂 `deps` 干净（逐个挂要用 `block deps <下游块> --add <共享前置>`，各写一条接线，多一片线）。
 - **`--deps` 是 `nargs='*'`：重复写多个 `--deps` 只有最后一个生效。** 一个块要多条前置，写成
   `--deps T-004#B-001 T-005#B-001 T-006#B-001`（一个旗标跟一串），**不要** `--deps A --deps B` ——
   后者静默只留 B，图上看起来「有依赖」，实际只等一条（本 skill 踩过：总校验块本该等齐 13 条归档块，
   结果只挂了最后一条，而 `check` 不会有任何意见）。同理 `--review-of` 也只看最后一次。
   同一族的 `--artifact`（只在 `done` 收，用来登记证据路径）也不要假设重复旗标会累积：**要登记多条证据，
-  就一个旗标跟一串（`--artifact a b c`），或分几条 `block set … done --artifact <一个>`（每条追一条 run）；
+  就一个旗标跟一串（`--artifact a b c`），或分几条 `block set_status … done --artifact <一个>`（每条追一条 run）；
   写完 `block show <ref>` 读回 artifact 的条数** —— 只回显「✓ done」看不出少了哪几条。
   **批量建块 / 批量写证据后的读回断言要查这些字段**，别只查「doc / done_when 非空」—— 接线与证据正是那一档漏掉的。
-- **修接线错首选 `block deps <块> --deps A B C`（或 `--add` / `--rm`）**；确实要重建整块时才用下面这招 ——
-  **倒着 rm 再重建**（块被下游引用时正向删会被拒）：`block rm <收口块>` →
-  `block rm <校验块>` → 用一次给全的 `--deps` 重建校验块（`--no-render`）→ 再重建收口块并 `--deps`
+- **修接线错首选 `block deps <块> --deps A B C`（或 `--add` / `--rm`）**；**只是要摘掉一个中间块**（让它前面
+  直接接后面）用 `block bypass <块>` —— 它顺手把引用改对，比删了再重建小得多。确实要重建整块时才用下面这招 ——
+  **倒着 rm 再重建**（块被下游引用时正向删会被拒）：`block remove <收口块>` →
+  `block remove <校验块>` → 用一次给全的 `--deps` 重建校验块（`--no-render`）→ 再重建收口块并 `--deps`
   指回校验块 → `render` + `check`。两块都还没开工（`blocked`）时无损；有 runs 的块要按
-  `block set … <状态> --by <原 actor> --at <原 ISO> --note "<原 note>"` 把 run 补回。
+  `block set_status … <状态> --by <原 actor> --at <原 ISO> --note "<原 note>"` 把 run 补回。
 - **`task` 只建不改：没有改名、没有重排命令。** 改泳道标题或调整泳道顺序只能改 `plan.json`：
   先 `cp plan.json plan.json.bak-<时间戳>`，只动那几个 `title` 字段 / `tasks` 列表顺序，再 `check` →
   `render`，然后**读回一条**确认（标题不是状态，不为它破坏「状态只经 CLI 改」，但改完必须 check）。
   任务顺序 = 看板泳道顺序 = 流程顺序；用户说「按 X 排序／我们先做最简单的」时，就是重排 `tasks` 列表，
   **块的 id 不动**（id 是位置不是身份），所以重排后要把「新顺序 ↔ 旧 T id」的对照念给用户。
-- **`block collapse --into` 落进一个有任务级依赖的任务会继承它的全部块**：`block_deps` 会把落点任务的
+- **`block compress --into` 落进一个有任务级依赖的任务会继承它的全部块**：`block_deps` 会把落点任务的
   任务级前置展开成「那些任务的每一个块」，所以压出来的块可能凭空多等一批块、甚至成环。
   报错里会点名是哪个任务级依赖；换个落点或用 `--keep-task` 即可。
 - **`new --owner "you=…"` 传了也没用**：`cmd_new` 在循环之后无条件再 `add_participant(plan, "you=human:本人")`，
@@ -504,9 +510,9 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
   `--deps <检查块> --status claimed --owner <执行方>`，【前置】写进 `doc`，**不要置 `blocked`** ——
   那等于把已经给出的批准又收回去。谁动手由他定（他自己删 / 让 agent 起后台进程删），删完回读
   「路径不存在 + 体积回收」再收工。
-- **block 的 `doc` 写错了要改原文**（`set … --doc`），不要把更正只留在日志里：人和 agent 读的是
+- **block 的 `doc` 写错了要改原文**（`block set_doc <块ref> "<新 doc>"` —— 整段替换），不要把更正只留在日志里：人和 agent 读的是
   html / PLAN.md 里的 doc 原文，日志里的「纠正」救不了他 —— 他会拿着错前提来问你。
-- **改错时连带把过期的证据路径改掉**：`--artifact` 还指着被纠正前的旧路径，看板就挂一条假证据（路径已不存在）。已 `done` 的块再发一次 `block set <ref> done --artifact <新路径> --note "<为什么改>"` 即可（已 done 再收一次会追加一条 run，不报错）。
+- **改错时连带把过期的证据路径改掉**：`--artifact` 还指着被纠正前的旧路径，看板就挂一条假证据（路径已不存在）。已 `done` 的块再发一次 `block set_status <ref> done --artifact <新路径> --note "<为什么改>"` 即可（已 done 再收一次会追加一条 run，不报错）。
 - **用户纠正「形状」时把它落成约定，别只改这一次**：路径层级 / 命名这类形状被纠正后，`note --kind decision` 记一条（「层级 = …」）并在块的 `doc` 里引用，否则下一批同类块还会照错的形状建。
 - **用户报了几块就建几块；范围重叠用「显式排除」解决，不要提议合并**：两个删除块若按目录跑会互相吞（后一块的范围里包含前一块要处理的文件）。
   做法是在后一块的 `doc` 里写「本块删除范围 = … 减去 `<文件>`（由 `T-00N#B-00N` 单列处理）」并把它写进判据；
@@ -519,7 +525,7 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 - **同一份 plan 上可能有人（另一个 profile / 另一个会话）在并行加块**：任务图会在你眼皮底下变（实测块数 46 → 56，
   多出两条新任务且已有块在 `running`）。所以 ① 汇报进度用**刚读到的实时数**，别用几轮前的；② 建块前先读一遍，避免重复建；
   ③ 不是自己建的块**只报告、不接管** —— 除非用户明确说「直接认领并执行即可」，那就是接手（哪怕它已被别人 `claimed` / 挂在 `running`）：
-  `block set <slug> <ref> running --by <你>` → 干完按它自己的判据 `done --artifact … --note …`，**不换 owner**（除非用户要换）。
+  `block set_status <slug> <ref> running --by <你>` → 干完按它自己的判据 `done --artifact … --note …`，**不换 owner**（除非用户要换）。
 - **没有 `status` 子命令**：每轮汇报用的 `<已完成>/<总数>` 用 `loomerto list`（自带进度）拿，或**只读** `plan.json` 数一遍状态；
   只读计数可以读文件，**写入一律走 CLI**。
 - 任务级依赖不写进块里，但**会被算进开工条件**：块看起来"没人挡着"却动不了时，查它所属任务的 `deps`。
@@ -605,8 +611,8 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
   `python3 -c "from loomerto import model; print('BLOCK_FIELDS' in dir(model))"`。
 - **块的形状只有一处声明 = `model.BLOCK_FIELDS`**（键 → 默认值/工厂）。**加一个块级键就改它一处**：
   `model.new_block()` 是建块的唯一字面量，`edits.add_block` / `edits.insert_block` / `cli` 的 `expand` 步骤
-  与 `collapse` 合并块都调它 —— 别再手写块字典（以前四处各抄一遍，实库里 9 份 plan 的 158 个块没有
-  `exec` 就是这么来的）。只有 `block collapse` 会写的 `folded_from` 属于 `BLOCK_HISTORY_FIELDS`，
+  与 `compress` 合并块都调它 —— 别再手写块字典（以前四处各抄一遍，实库里 9 份 plan 的 158 个块没有
+  `exec` 就是这么来的）。只有 `block compress` 会写的 `folded_from` 属于 `BLOCK_HISTORY_FIELDS`，
   **不进那张表**（不是每个块都有），`normalize_block()` 也不许删它。
 - **老 plan 的缺键是「读时补齐、写时落盘」**：`store.load()` 按 `BLOCK_FIELDS` 只补不改地补齐每个块，
   但**不因此落盘** —— 只读命令（`block show` / `check` / `current` / `workers` / `digest`）跑完，

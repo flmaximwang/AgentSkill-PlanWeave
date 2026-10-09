@@ -26,7 +26,7 @@
   },
   {
     "id": 6,
-    "prompt": "帮我把某个块的 doc 改一下，顺便告诉我 plan.py block describe 和 block set 都能改哪些字段。",
-    "expected": "属于 loomerto-plan（改详情走 block describe 的 --title/--doc/--done-when/--kind，改状态与身份走 block set --doc/--done-when/--artifact/--owner/--by；块位置不能用这两个命令改），不是本 skill。"
+    "prompt": "帮我把某个块的 doc 改一下，顺便告诉我 plan.py block set_doc 和 block set_status 都能改哪些字段。",
+    "expected": "属于 loomerto-plan（改属性走 block set_doc / set_title / set_type / set_input / set_output / set_command / set_audit，各自只改一个字段、值整组替换；改状态与身份走 block set_status --doc/--done-when/--artifact/--owner/--by；块位置不能用这些命令改），不是本 skill。"
   }
 ]

@@ -17,7 +17,7 @@
 - **要什么 / 做到哪了 / 缺什么** → [`REQUIREMENTS.md`](REQUIREMENTS.md) —— **需求的唯一入口**，
   它里面有一张完整的文档地图（哪类细节去哪份文件）。需求不散落在各 skill 正文里。
 - **包怎么分层 / 怎么接新前端（画布写回、web 服务）/ 改代码前的三道闸** → [`docs/architecture.md`](docs/architecture.md)。
-- **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（15 个子命令逐条，含退出码与全局旗标）。
+- **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（31 个叶子命令逐条，含退出码与全局旗标）。
 - **动手改一份 plan** → [`skills/plan-weave/loomerto-plan/SKILL.md`](skills/plan-weave/loomerto-plan/SKILL.md)（模型 / 状态表 / 谁在做+线程 / 坑）。
 - 本文件剩下的部分 = 仓库索引：五条 skill 各是什么、怎么装、盲测记录。
 
@@ -129,7 +129,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
 - **状态 × 负责人**（`model.STATUS_OWNER`）：`待认领` **不能**有负责人（定义就是「还没人接」）；`已认领` /
   `进行中` / `待评审` **必须**有；`待批准` / `等前置` / `已完成` / `已取消` 可有可无。
 - **一次协作回合的固定动作**：`current`（先看现在能动的块）→ `note`（总结这一段真正发生了什么，
-  拿不准的写「待确认」）→ `block set`（只改受影响的块，带 `--by` / `--note`；派给子代理时同一句里
+  拿不准的写「待确认」）→ `block set_status`（只改受影响的块，带 `--by` / `--note`；派给子代理时同一句里
   补 `--delegation` / `--transcript`）→ `check`（环 / 悬空依赖 / 已认领却没写负责人 / 悬置超时，
   **有错误就别往下走**）→ `workers`（每个在途块的线程还在动吗）→ `digest`（提醒，纪律见
   `loomerto-remind`）。
@@ -143,13 +143,17 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   他和你在同一台机器上，粘进地址栏即开）。整条消息压到不被 Discord 拆成 `(1/2)`；机制、字段清单、判据
   都放 plan 文件里。**截图只在明确索取时才发一次，且永远不许顶掉那行 URL**（截图一改就过期）。
   给 **agent** 的是另一份：`plan.json` / `PLAN.md` 的绝对路径。
-- **粒度可调（`block expand` / `block collapse`）**：一个块干着干着发现是三件事 → `block expand` 把它升级成**一个任务**
-  （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `block collapse` 压回**一个块**
+- **粒度可调（`block expand` / `block compress`）**：一个块干着干着发现是三件事 → `block expand` 把它升级成**一个任务**
+  （原块原地成为第一步，`--step` 追加后续步骤）；一个任务拆得太碎 → `block compress` 压回**一个块**
   （默认回展开前的位置，也可 `--into <块/任务>` 或 `--keep-task`）。两者都把「谁在等它 / 它在等谁」
   一次改对（含任务级依赖与 `review_of`）、先查环（成环就报错且一个字不写）、支持 `--dry-run`。
-  要往**中间**插一步（不是追加到末尾）用 `block insert <锚块> [--before|--after]`，它同样把接线改对。
+  要往**中间**插一步（不是追加到末尾）用 `block insert <锚块> [--before|--after]`，它同样把接线改对；
+  要把一个**中间块**摘掉、让它前面直接接后面用 `block bypass <块ref>`（等于 `remove` + 替你把引用改对）。
   **接线事后要改**（不是加/删整块）用 `block deps <块ref> --add/--rm/--deps`：依赖必须**已经存在**、
   引用当场规整去重、改完**查环**（成环退 2 且一个字不写）；`--deps` 给空即清空前置。
+- **块的属性一条命令一个**（R-23）：`block set_title` / `set_doc` / `set_type` / `set_input` /
+  `set_output` / `set_command` / `set_audit`，外加管状态与身份的 `block set_status`；值整组替换、
+  留空 = 清空，没有变化就退 2 且一个字不写。
 - **实现**在仓库根的 `loomerto/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
   [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 
@@ -202,7 +206,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
 结论四值：`✅ 闭环` / `⚠️ 部分`（收尾在，但声明缺项或位置偏早）/ `❌ 不闭环`（有生产、没人收尾，exit 1）/
 `➖ 无需清理（没检测到）`。**`➖` 是「没查出来」，不是「没有」** —— 判据只看文本，拿不准就加 `--strict`。
 
-- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `task new` / `block new` / `block set` 命令
+- **给的是能照抄的补法**：`❌` 时直接打印按你的 plan 现算的 `task new` / `block add` / `block set_status` 命令
   （含任务号、`--deps`、清单与判据骨架），照抄即可把「删除临时文件」这个收尾任务节点建起来。
 - **同音词是主要误报源**（第一版实测误判 4 份真 plan）：「暂存」= git staging、「副本」= 工作副本、
   「残留」= 没留下坏链接、「截图」= 笔记里的附件 —— 都不是临时文件；强判据只认能指认

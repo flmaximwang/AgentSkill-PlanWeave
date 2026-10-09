@@ -415,7 +415,7 @@ def report(plan: dict, rows, args):
             print(f"  {r['id']}  命令 {len(r['commands'])} 条（{src}）")
     if bad:
         print(f"\n补法：把命令写进块 doc 的 ```bash 围栏，并给每个变量一行定义 —— "
-              f"`plan.py block describe {plan.get('slug')} <块 id> --doc \"<原 doc + 命令段>\"`；"
+              f"`plan.py block set_doc {plan.get('slug')} <块 id> \"<原 doc + 命令段>\"`；"
               f"改完重跑本校验，exit 0 才算批准。")
     return EXIT_FAIL if bad else EXIT_OK
 

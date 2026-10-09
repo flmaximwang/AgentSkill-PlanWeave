@@ -51,7 +51,7 @@ POST /api/plan  {"op": …, "rev": "<读到的 rev>", "by": "<谁>", "note": "�
 | op | 还要给 | 落到哪 |
 |---|---|---|
 | `edit` | `ref` + `title?` `doc?` `done_when?[]` `owner?` `kind?` `note?` | `edits.edit_block` —— **只改文档字段，不动状态** |
-| `status` | `ref` + `status` + 可选 `by` `note` `owner` | `edits.set_status` —— 与 `loomerto block set` / `task set` 完全同一套（runs / feedback / exec 的写法同一处） |
+| `status` | `ref` + `status` + 可选 `by` `note` `owner` | `edits.set_status` —— 与 `loomerto block set_status` / `task set` 完全同一套（runs / feedback / exec 的写法同一处） |
 | `task` | `title` + 可选 `owner` `deps[]` | `edits.add_task` |
 | `block` | `task` + `title` + 可选 `kind` `doc` `done_when[]` `owner` `status` | `edits.add_block`（画布默认 `pending`：建块的人就是在画布上批准它的人） |
 | `reorder` | `task` + `order[]`（块 id 或块内后缀，**必须与任务里的块一一对应**）+ 可选 `ref`（拖的是哪个块） | `edits.reorder_blocks` —— 只改 list 顺序，**不碰 deps**、不换 id |
@@ -78,8 +78,8 @@ POST /api/plan  {"op": …, "rev": "<读到的 rev>", "by": "<谁>", "note": "�
 
 | 不做 | 为什么 |
 |---|---|
-| 删块 / 删任务 | 一脚踩坏判据与历史；`loomerto block rm` / `task rm` 会检查谁引用它，界面上做不出口径 |
-| 改 `deps` / `review_of` | 依赖是结构，不是摆设；改错了就是一张假图。要把块换地方就拖它（`move` 会把 id 与引用一次改对），要改粒度走 `expand` / `collapse`。**画布上不做**，命令层有 `loomerto block deps <块ref> --add/--rm/--deps`（带存在性校验与查环） |
+| 删块 / 删任务 | 一脚踩坏判据与历史；`loomerto block remove` / `task rm` 会检查谁引用它，界面上做不出口径（要连着接线一起改对走 `block bypass`） |
+| 改 `deps` / `review_of` | 依赖是结构，不是摆设；改错了就是一张假图。要把块换地方就拖它（`move` 会把 id 与引用一次改对），要改粒度走 `expand` / `compress`。**画布上不做**，命令层有 `loomerto block deps <块ref> --add/--rm/--deps`（带存在性校验与查环） |
 | 改块的派生状态显示 | 派生值只从依赖**与认领**算（`ready` = 依赖就绪且没人接；有 `owner` 的是 `claimed`），人不手填（写 `ready` 会被模型拒绝） |
 | 跨泳道拖动**时**顺手改名称/认领人 | 拖是拖、改是改：一次请求一件事，出问题才说得清是哪一下弄坏的 |
 
