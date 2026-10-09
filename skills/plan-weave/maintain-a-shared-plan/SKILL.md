@@ -1,6 +1,6 @@
 ---
 name: maintain-a-shared-plan
-description: "Use when 与人/其他 agent 协同时要维护一份共享 plan。用 loomerto CLI（loomerto --plans-root <库> <子命令> <slug>）改状态、渲染三视图、发提醒；plan.json 是唯一真相，只经 CLI 改。"
+description: "Use when 与人/其他 agent 协同时要维护一份共享 plan。用 loomerto CLI（loomerto --plans-root <库> <子命令> <slug>）改状态、渲染三视图、发提醒；plan.json 是唯一真相，只经 CLI 改。上下文变长（跨 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时先把后续规划、子代理分配与执行落到 plan 上。"
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -37,6 +37,25 @@ metadata:
 **CLI 现在做不到的动作 → 报给用户，别绕道写脚本**（例：`task` 只建不改 —— 改泳道标题 / 重排泳道顺序
 没有命令）。把缺口说清楚（要什么动作、代价多大）交给用户拍板；正路是**给包加一条命令**
 （见 `maintain-the-loomerto-package`），不是手改 `plan.json`。
+
+## 会话一长，先把它落到 plan 上
+
+**上下文变长时不要继续在聊天里硬推** —— 把接下来的事写进 plan，用 plan 做进一步的规划、派子代理、按块执行。
+「长」的判据不是 token 数，而是这三件里的任一件：一件事已经跨了 3 个以上回合、你开始要向接手的人解释背景、
+或者有多条互不相干的线同时在推。到了这一步，聊天里的结论已经开始丢，plan 是唯一不会被压缩掉的那份记录。
+
+固定动作（缺一步就等于没落到 plan 上）：
+
+1. **先读现状**：`loomerto current <slug>`；还没有 plan 就先
+   `loomerto plan new <slug> --title "…" --goal "…"`。
+2. **把剩下的活写成任务与块**：一个对象 / 一条工作线 = 一条泳道（`task`）；块要带 `doc`（做什么）与
+   `done_when`（**别人能重跑**的判据）—— 判据写不成可核验的，说明这一块还没想清楚，别建。
+3. **按块派子代理**：一块一个子代理，派完立刻登记线程
+   `loomerto block set <slug> <块ref> running --by <谁> --delegation <deleg_id> --task-index N --transcript <转录路径>`。
+   **子代理禁止起后台进程**（子代理退出时它的后台进程会接管 thread）；长活按目录 / 前缀分片、每条命令自带超时。
+4. **按块收工**：`loomerto workers <slug>` 看在途线程还在不在动、`loomerto check <slug>` 看图质量；
+   做完 `loomerto block set <slug> <块ref> done --artifact <产物绝对路径> --note "<做了什么>"`。
+5. **回到聊天只留三样**：结论 + 该谁动（块 id）+ 那行 `file://…/plan.html`。
 
 ## 唯一真相与目录
 
