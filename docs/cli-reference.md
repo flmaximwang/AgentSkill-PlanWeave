@@ -12,8 +12,8 @@
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
 > ```bash
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
-> for c in "plan new" "task new" \
->          "task set" "task rm" "task show" \
+> for c in "plan new" "task add" \
+>          "task set_status" "task remove" "task show" \
 >          "block add" "block remove" "block insert" "block bypass" "block expand" "block compress" "block show" \
 >          "block deps" "block assign" "block move" \
 >          "block set_type" "block set_title" "block set_doc" "block set_status" \
@@ -79,16 +79,16 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   `block set_status <slug> <ref> <状态>` → `<ref> <状态>`、
   `block set_title|set_doc|set_type|set_input|set_output|set_command|set_audit <slug> <ref> <值>` → `<ref> <值>`、
   `block show|remove|insert|bypass|move|expand|compress|deps <slug> <ref>` → `<ref>`、
-  `task set <slug> <ref> <状态>` → `<ref> <状态>`、`task show|rm <slug> <ref>` → `<ref>`、
+  `task set_status <slug> <ref> <状态>` → `<ref> <状态>`、`task show|remove <slug> <ref>` → `<ref>`、
   `note <slug> <text>` → `<text>`；其余（`current` / `check` / `workers` / `render` / `digest` / `list` /
-  `plan new` / `task new` / `block add`）文件模式下**不写位置参数**。多写一个（如
+  `plan new` / `task add` / `block add`）文件模式下**不写位置参数**。多写一个（如
   `block show myplan T-003#B-004`）退 2，并点明「文件模式下不要再写 slug」。
   两个格子可以留空：`set_status` 的 `<状态>`（只给 `--unset` 清线程登记时）与 `set_*` 的 `<值>`
   （= 把那个属性清空）。
 - `list`：给了 `--plan` 就只列这一份；否则列 `--plans-root` 库里的全部。
 - `ref` 的写法：`T-002`（任务）/ `T-002#B-001`（块）/ `B-001`（块内唯一后缀）。
-- **跨组错用会给人话错误**（退 2）：`task set T-001#B-001` 会说「这是块不是任务 —— 块状态用 `block set_status`」，
-  `block remove T-002` 会说「这是任务不是块 —— 连块一起删用 `task rm`」。命令名字面量按对象选，不对就当场点明。
+- **跨组错用会给人话错误**（退 2）：`task set_status T-001#B-001` 会说「这是块不是任务 —— 块状态用 `block set_status`」，
+  `block remove T-002` 会说「这是任务不是块 —— 连块一起删用 `task remove`」。命令名字面量按对象选，不对就当场点明。
 - **退出码**：参数错、找不到对象 → **2**；`check` 发现图错误 → **1**；`workers` 发现 ⚠/❌ → **1**；其余 → **0**。
   出错原因走 stderr（中文），stdout 只放给人/给 agent 读的结果。
 
@@ -102,8 +102,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 - 落盘后渲出三个视图；目标已存在时**必须 `--force`**。
 - 注意：`plan new` 之后无条件再补一个 `you=human:本人`，会覆盖同 id 的 `--owner`（要带 Discord 身份就另起 id）。
 
-### `task new` — 加一条任务（泳道）
-`py task new <slug> --title TITLE [--id T-00N] [--owner x] [--deps T-001 …] [--note "…"]`
+### `task add` — 加一条任务（泳道）
+`py task add <slug> --title TITLE [--id T-00N] [--owner x] [--deps T-001 …] [--note "…"]`
 - `--deps` 是**任务级**依赖；开工条件 = 那些任务的**全部**块都 done。
 
 ### `block add` — 往一条任务**末尾**加块（可独立认领、可评审的工作）
@@ -155,11 +155,11 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
   只改先后，此时 id 与接线都不动 —— 等价 `reorder`，画布上的同泳道拖动走的就是这条。
 - **成环则拒改，且一个字都不写**（与 `block expand` / `block compress` 同一道闸）。最容易踩的一种：目标任务的
   任务级 `deps` 在块搬进来后会落到它身上，而源任务里正好有块等它 —— 报错会点名是哪条任务级依赖。
-- 源任务被搬空**不删任务**（空泳道留着）；删任务走 `task rm`。
+- 源任务被搬空**不删任务**（空泳道留着）；删任务走 `task remove`。
 - 命令会打印换了什么：新 id、哪些块改等它、目标任务的任务级依赖从此算它的前置、源任务是否空了。
 
-### `task rm` — 真删一条任务（连同它的块）
-`py task rm <slug> <任务ref> [--note "为什么删"] [--force]`
+### `task remove` — 真删一条任务（连同它的块）
+`py task remove <slug> <任务ref> [--note "为什么删"] [--force]`
 - 两种拒删：① 还有别的任务依赖它（任务级 `deps`）；② 它的块还被**别的任务**的块依赖
   （删了那些依赖会变悬空、`check` 会一直报）。都要 `--force`。
 
@@ -180,8 +180,8 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/s
 ### `block set_status` — 改块状态（**同一个入口**登记谁在做 + 那条子代理线程；旧名 `set`）
 `py block set_status <slug> <块ref> <状态> [--by 谁] [--delegation deleg_xxxxxxxx] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--artifact 路径]… [--doc "…"] [--done-when "…"]… [--actor 谁]`
 
-### `task set` — 改任务状态（在途时才登记在做的人与线程）
-`py task set <slug> <任务ref> <状态> [--by 谁] [--delegation …] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--actor 谁]`
+### `task set_status` — 改任务状态（在途时才登记在做的人与线程）
+`py task set_status <slug> <任务ref> <状态> [--by 谁] [--delegation …] [--task-index N] [--transcript <路径>] [--note "…"] [--owner x] [--at ISO8601] [--actor 谁]`
 - 块状态：`pending` / `claimed` / `running` / `review` / `done` / `blocked` / `cancelled`；
   任务状态只有 `pending` / `running` / `done` / `blocked` / `cancelled`。
 - **写 `ready`/`waiting` 会被拒绝**（派生状态，由依赖算出来）——两处真相是这套东西要消灭的。

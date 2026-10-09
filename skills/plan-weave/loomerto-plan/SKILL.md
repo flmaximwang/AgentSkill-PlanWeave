@@ -218,7 +218,7 @@ $LT block compress <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 
 **「每个 <对象> 是 1 个泳道」= 把一个任务里的 N 个块升格成 N 条泳道。** 用户报一串要处理的对象
 （一批源、一批目录、一批构建体）并把它们逐个念出来时，先按「一个对象一条泳道」建，**不要**把它们
-塞成一条任务里的 N 个块——他会在半路上纠正，改起来要搬一遍。做法：① 每个对象 `task new --title "<动作>：<对象>"`
+塞成一条任务里的 N 个块——他会在半路上纠正，改起来要搬一遍。做法：① 每个对象 `task add --title "<动作>：<对象>"`
 并**从输出里解析出真实 T id**；② `block move <块ref> --task <新 T id>` 把原块搬过去（块在新泳道里取
 `#B-001`，deps 自动重接）；③ 共享的前置/收尾（盘点·决策·建库 / 总校验·收口）单独留一条「准备」与一条
 「收尾」泳道，别摊到每条对象泳道里。批量搬完 `block move` 会重写所有指过来的 `deps`，**搬完必须读回**
@@ -300,7 +300,7 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
 7. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
    - `loomerto-check-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
    - `loomerto-check-temps`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
-     `loomerto task new` / `loomerto block add` / `loomerto block set_status` 命令补一个收尾任务节点与「临时文件：…」声明。
+     `loomerto task add` / `loomerto block add` / `loomerto block set_status` 命令补一个收尾任务节点与「临时文件：…」声明。
    改完重跑；两条都要 `exit 0` 才往下走。
 
 改状态时 `loomerto` 会自动重渲染三个视图（`--no-render` 可跳过）。
@@ -321,10 +321,10 @@ LT="loomerto --plans-root <本 profile 的 workspace/plans>"
 $LT list                                  # 所有 plan + 进度
 $LT plan new <slug> --title "…" --goal "…" --owner "you=human:本人@discord:<ch>" \
    --owner "rdm-assistance=agent:RdmAsst3813"
-$LT task new <slug> --title "…" [--deps T-001] [--owner x]
-$LT task set <slug> <任务ref> <状态> [--by x] [--note "…"]        # 任务状态；线程登记只在 running 收
+$LT task add <slug> --title "…" [--deps T-001] [--owner x]
+$LT task set_status <slug> <任务ref> <状态> [--by x] [--note "…"]        # 任务状态；线程登记只在 running 收
 $LT task show <slug> <任务ref> [--json]                           # 一条任务的详情（只读）
-$LT task rm <slug> <任务ref> [--force]                            # 真删任务（连带它的块）
+$LT task remove <slug> <任务ref> [--force]                            # 真删任务（连带它的块）
 $LT block add <slug> --task T-001 --title "…" --kind impl|review|decision|research \
    --doc "做什么" --done-when "可核验的判据" [--deps T-001#B-002] [--review-of T-001#B-002] \
    [--owner x] [--status 状态]      # --status 默认 blocked（待批准）；无需审批才显式给 pending
@@ -454,7 +454,7 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 - 传播期内 `PUT /channels/<thread>/thread-members/@me` 也会 403，**它单独不能证明 thread 是私有的**。
 - 判断「提醒通道真的通了」的唯一判据不是 `hermes send` 回显 `sent`，而是**回读那条消息的 author.id**
   等于本 profile bot 自己的 user id（`/users/@me`）。否则可能发成了别的 profile 的 bot。
-- **`block set_status` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。**
+- **`block set_status` / `task set_status` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。**
 - **`note --kind note` 不存在**：合法 kind = `summary|decision|reminder|created|task|block|status|insert|assign|deps|remove|move|bypass|expand|collapse|compress`。写 `note` 会退 2 并把这串候选列出来；记「这一段发生了什么」用 `--kind summary`。同族提醒：**任何旗标被拒时，先读它自己打印的候选清单再重试** —— 换一个近义词继续猜（note→summary）会白多烧一轮。
 - **`block set_status … done` 的 `--artifact` 收多条：写完读回条数**（`block show <ref>`），只看到「✓ done」看不出少登记了哪条证据。
 - **「待认领」= 依赖就绪 且没人接**（2026-10-08 起）：一个块只要有负责人，依赖一就绪就显示成**已认领** ——

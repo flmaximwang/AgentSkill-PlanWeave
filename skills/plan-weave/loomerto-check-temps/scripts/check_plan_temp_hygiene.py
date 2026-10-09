@@ -278,7 +278,7 @@ def suggestions(plan: dict, evidence, cleanup):
     out = []
     if not cleanup:
         out.append("1) 建收尾任务节点（这个 plan 里没有人负责清临时文件）：")
-        out.append(f"     py task new {slug} --title \"清理本轮临时文件\" --owner <谁>"
+        out.append(f"     py task add {slug} --title \"清理本轮临时文件\" --owner <谁>"
                    + (f" --deps {last_task}" if last_task else ""))
         out.append("2) 在它下面建这一块，把清单与判据写进去：")
         out.append(f"     py block add {slug} --task {newt} --title \"删除本轮临时文件\" --kind impl \\")

@@ -182,26 +182,28 @@ def set_field(plan: dict, ref: str, key: str, value, *, note: str = "", actor: s
     """
     _task, block = find(plan, ref)
     if block is None:
-        raise PlanError(f"{ref} 是任务不是块 —— `block set_*` 这几个都只改块（改任务用 `task set`）")
+        raise PlanError(f"{ref} 是任务不是块 —— `block set_*` 这几个都只改块（改任务用 `task set_status`）")
     if key not in BLOCK_FIELDS:
         raise PlanError(f"{key} 不是块的属性 —— 能设的见 `model.BLOCK_FIELDS`")
     if key == "kind":
         new = (value or "").strip()
         if new not in KINDS:
             raise PlanError(f"块类型只能是 {KINDS}")
-    elif key == "done_when":
-        new = [c.strip() for c in re.split(r"[;；]", value or "") if c.strip()]
     elif key == "title":
         new = (value or "").strip()
         if not new:
             raise PlanError("块要有标题 —— 清空标题不是一条能设的属性"
                             "（真不要这个块了用 `block remove`）")
+    elif key == "done_when":
+        # 值是列表（每条 --audit 一个元素）或空串（清空）；元素里的 `;` 仍算分隔
+        parts = value if isinstance(value, list) else [value or ""]
+        new = [c.strip() for v in parts for c in re.split(r"[;；]", v or "") if c.strip()]
     else:
         new = (value or "").strip()
     old = block.get(key)
-    if (list(old or []) if key == "done_when" else old) == new:
-        shown = "、".join(old or []) if key == "done_when" else (old or "")
-        raise PlanError(f"{block['id']} 的{FIELD_ZH.get(key, key)}没变（{shown or '空'}）"
+    if old == new:
+        shown = "、".join(old or []) if isinstance(old, list) else (old or "空")
+        raise PlanError(f"{block['id']} 的{FIELD_ZH.get(key, key)}没变（{shown}）"
                         f"—— 没有写入任何东西")
     block[key] = new
     log_event(plan, "block", f"{block['id']} 改了 {FIELD_ZH.get(key, key)}"
@@ -274,7 +276,7 @@ def assign_block(plan: dict, ref: str, who: str, *, note: str = "", actor: str =
     """
     _task, block = find(plan, ref)
     if block is None:
-        raise PlanError(f"{ref} 是任务不是块 —— assign 只对块有用（任务级的认领在 `task new --owner`）")
+        raise PlanError(f"{ref} 是任务不是块 —— assign 只对块有用（任务级的认领在 `task add --owner`）")
     old = block.get("owner") or ""
     who = (who or "").strip()
     if old == who:
@@ -301,7 +303,7 @@ def set_deps(plan: dict, ref: str, *, deps=None, add=(), rm=(), note: str = "", 
     _task, block = find(plan, ref)
     if block is None:
         raise PlanError(f"{ref} 是任务不是块 —— 块的前置用 `block deps <块 ref> --add/--rm`；"
-                        f"任务级依赖只能建任务时给（`task new --deps`）")
+                        f"任务级依赖只能建任务时给（`task add --deps`）")
     if deps is not None and (add or rm):
         raise PlanError("--deps 是整组替换，与 --add / --rm 不能同时给")
     if deps is None and not add and not rm:
@@ -320,7 +322,7 @@ def set_deps(plan: dict, ref: str, *, deps=None, add=(), rm=(), note: str = "", 
             raise PlanError(
                 f"依赖 {d} 不是这一份 plan 里的块"
                 + ("（它是任务）—— 块只能等另一个块；要等一整条任务，把那条依赖写进任务级依赖"
-                   "（`task new --deps`）" if dt_ is not None else
+                   "（`task add --deps`）" if dt_ is not None else
                    " —— 依赖只能写已经存在的块（先建它，或换一条）"))
         if db["id"] == block["id"]:
             raise PlanError(f"{block['id']} 不能等自己")
@@ -465,7 +467,7 @@ def move_block(plan: dict, ref: str, to_task_ref: str, *, index=None, note: str 
         notes.append(f"⚠ {dst['id']} 的任务级依赖（{'、'.join(dst['deps'])}）从此也算这块的前置"
                      " —— 它可能会退回「等前置」")
     if not src["blocks"]:
-        notes.append(f"⚠ 源任务 {src['id']} 现在一个块都没有了（空泳道留着；删任务走 `task rm`）")
+        notes.append(f"⚠ 源任务 {src['id']} 现在一个块都没有了（空泳道留着；删任务走 `task remove`）")
     log_event(plan, "move", f"{old} 移到 {dst['id']}（新 id {new}，第 {at + 1} 位）"
               + (f"；重接接线 {len(rewired)} 处：{'、'.join(rewired)}" if rewired else "")
               + (f"（{note}）" if note else ""), actor=actor, ref=new)

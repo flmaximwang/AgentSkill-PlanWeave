@@ -1,6 +1,6 @@
-"""CLI 层：argparse + 24 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
+"""CLI 层：argparse + 34 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
 `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 是单层），
-动作一律放到二级（`block set_status` / `task rm`…）。唯一允许 print 与决定退出码的地方。
+动作一律放到二级（`block set_status` / `task remove`…）。唯一允许 print 与决定退出码的地方。
 
 别的 harness 想用这套能力，要么调这个模块的 `main()`，要么直接 import 模型 / 存储层。
 """
@@ -67,7 +67,7 @@ def add_participant(plan: dict, spec: str):
     plan["participants"].append(
         {"id": pid or label, "kind": kind, "label": label or pid, "channel": channel})
 
-def cmd_task(a):
+def cmd_task_add(a):
     plan = load(a.slug)
     t = edits.add_task(plan, a.title, id=a.id or "", owner=a.owner or "",
                        deps=a.deps or [], note=a.note or "", actor=a.actor)
@@ -125,7 +125,7 @@ def _thread_brief(target) -> str:
 
 
 def _apply_set(a, plan, ref: str, *, is_block: bool):
-    """`block set_status` / `task set` 的公共实现：状态 + 身份（谁在做 / 子代理线程）一个入口。
+    """`block set_status` / `task set_status` 的公共实现：状态 + 身份（谁在做 / 子代理线程）一个入口。
 
     <状态> 可以省 —— 只给 `--unset` 时用来清线程登记；其余参数按状态卡
     （`edits.check_set_flags`：在途状态才收线程登记，产物只在 done 收）。
@@ -170,24 +170,24 @@ def cmd_block_set_status(a):
     plan = load(a.slug)
     _task, block = find(plan, a.ref)
     if block is None:
-        die(f"{a.ref} 是任务不是块 —— 任务状态用 `task set {a.ref} <状态>`"
+        die(f"{a.ref} 是任务不是块 —— 任务状态用 `task set_status {a.ref} <状态>`"
             f"（{'/'.join(edits.TASK_STATUS)}）；块状态用 `block set_status <块 ref> <状态>`")
     return _apply_set(a, plan, a.ref, is_block=True)
 
 
-def cmd_task_set(a):
+def cmd_task_set_status(a):
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is not None:
         die(f"{a.ref} 是块不是任务 —— 块状态用 `block set_status {a.ref} <状态>`"
-            f"（{'/'.join(BLOCK_STATUS)}）；任务状态用 `task set <任务 ref> <状态>`")
+            f"（{'/'.join(BLOCK_STATUS)}）；任务状态用 `task set_status <任务 ref> <状态>`")
     return _apply_set(a, plan, a.ref, is_block=False)
 
 
 def cmd_block_set_attr(a):
     """`set_title` / `set_doc` / `set_type` / `set_input` / `set_output` / `set_command` /
-    `set_audit` 共用的实现：改块的**一个**属性（值可以留空 = 清空；`set_audit` 的值里用
-    `;` 分隔多条判据）—— 不动状态，改动记进日志。
+    `set_audit` 共用的实现：改块的**一个**属性（`set_audit` 的值按空格分多条判据，
+    `;` 也算一条）—— 不动状态，改动记进日志。
 
     分工：状态 + 身份（谁在做 / 线程）走 `block set_status`，认领人走 `block assign`，
     其余属性一条命令一个（`a.attr` 是块的键，见 `edits.set_field`）。没变化 ⇒ `PlanError`（退 2）。
@@ -214,7 +214,7 @@ def cmd_block_assign(a):
     plan = load(a.slug)
     _task, block = find(plan, a.ref)
     if block is None:
-        die(f"{a.ref} 是任务不是块 —— assign 只对块有用（任务级的认领在 `task new --owner`）")
+        die(f"{a.ref} 是任务不是块 —— assign 只对块有用（任务级的认领在 `task add --owner`）")
     if a.to and a.unset:
         die("--to 与 --unset 只能给一个")
     if not a.to and not a.unset:
@@ -246,7 +246,7 @@ def cmd_block_deps(a):
     task, block = find(plan, a.ref)
     if block is None:
         die(f"{a.ref} 是任务不是块 —— 块的前置用 `block deps <块 ref> --add/--rm`；"
-            f"任务级依赖只能建任务时给（`task new --deps`）")
+            f"任务级依赖只能建任务时给（`task add --deps`）")
     block, old, new = edits.set_deps(plan, a.ref, deps=a.deps, add=a.add, rm=a.rm,
                                      note=a.note or "", actor=a.actor)
     commit(a.slug, plan, a)
@@ -280,7 +280,7 @@ def cmd_block_remove(a):
     task, block = find(plan, a.ref)
     if block is None:
         die(f"{a.ref} 是任务不是块 —— 删块用 `block remove <块 ref>`；"
-            f"连它的块一起删掉这个任务用 `task rm {a.ref}`")
+            f"连它的块一起删掉这个任务用 `task remove {a.ref}`")
     users = refs_of_block(plan, block["id"])
     if users and not a.force:
         die(f"{block['id']} 还被这些块引用：{users} —— 确认后加 --force")
@@ -292,13 +292,13 @@ def cmd_block_remove(a):
     print(f"✓ 已删除块 {block['id']}（原状态 {old}）")
 
 
-def cmd_task_rm(a):
+def cmd_task_remove(a):
     """真删一条任务（连同它的块；取消 ≠ 删除）。"""
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is not None:
         die(f"{a.ref} 是块不是任务 —— 删这一个块用 `block remove {a.ref}`；"
-            f"删它所属的任务用 `task rm {task['id']}`（连它的块一起删）")
+            f"删它所属的任务用 `task remove {task['id']}`（连它的块一起删）")
     holders = [t["id"] for t in plan["tasks"]
                if task["id"] in (t.get("deps") or []) and t["id"] != task["id"]]
     if holders and not a.force:
@@ -927,8 +927,13 @@ _SET_ATTRS = {
     "input":   ("input",     "这一步吃什么（数据 / 路径 / 前提），留空 = 清空"),
     "output":  ("output",    "这一步吐什么（产物长什么样），留空 = 清空"),
     "command": ("command",   "具体跑什么命令，留空 = 清空"),
-    "audit":   ("done_when", "验收标准，多条用 ; 分隔、整组替换，留空 = 清空"),
+    "audit":   ("done_when", "验收标准，可多次、按顺序（`block set_audit <块ref> <判据1> <判据2> …`）；"
+                            "留空 = 清空"),
 }
+
+# `set_audit` 的 <值> 是 nargs="*"（按空格分判据），文件模式的定长左移判不了「这格空没空」
+# （列表永远不等于 None）⇒ 这几个键**不走文件模式**（见 `_apply_file_mode`）。
+_NO_SHIFT = {"done_when"}
 
 
 def _add_set_attr(g, name: str) -> None:
@@ -937,16 +942,26 @@ def _add_set_attr(g, name: str) -> None:
 
     `<值>` 可以留空（= 清空）：文件模式下位置参数整体左移，所以它得登记在 `optional` 里
     （见 `_apply_file_mode`），不然合法的「只给 ref」会被判成「少写了参数」。
+
+    `set_audit` 的 `<值>` 是 `nargs="*"`（**按空格分判据**，不是 `;`）：文件模式的定长左移
+    跟 `nargs="*"` 天生打架（左移靠 `getattr(a, d) in (None, "")` 判「这格空没空」，一个列表
+    永远不等于 `None`，合法的「只给 ref 清空判据」会被判成「少写了参数」），所以这个键
+    不走文件模式 —— 见 `_apply_file_mode` 里那段 set_audit 分支。
     """
     key, what = _SET_ATTRS[name]
     p = g.add_parser(f"set_{name}",
                      help=f"改块的「{edits.FIELD_ZH.get(key, key)}」—— {what}；不动状态，改动记进日志")
     p.add_argument("slug", nargs="?")
     p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("value", nargs="?", default=None, help=f"新值：{what}")
+    if key in _NO_SHIFT:
+        # 值那一格是 nargs="*"（按空格分判据）⇒ 位置参数不能整体左移，见 `_apply_file_mode`
+        p.add_argument("value", nargs="*", default=[], help=f"新值：{what}（不给就是清空）")
+    else:
+        p.add_argument("value", nargs="?", default=None, help=f"新值：{what}（不给就是清空）")
+        p.set_defaults(shift=["ref", "value"], optional=["value"])
     p.add_argument("--note", default="", help="为什么改（会记进日志）")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_set_attr, attr=key, shift=["ref", "value"], optional=["value"])
+    p.set_defaults(f=cmd_block_set_attr, attr=key)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -973,9 +988,9 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(f=cmd_new)
 
     # —— task 组：任务（泳道）
-    g = sub.add_parser("task", help="任务（泳道）：new / set / rm / show"
+    g = sub.add_parser("task", help="任务（泳道）：add / set_status / remove / show"
                        ).add_subparsers(dest="sub", required=True)
-    p = g.add_parser("new", help="加一条任务（泳道）")
+    p = g.add_parser("add", help="加一条任务（泳道）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("--title", required=True)
     p.add_argument("--id")
@@ -983,9 +998,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--deps", nargs="*", default=[])
     p.add_argument("--note", default="")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_task)
+    p.set_defaults(f=cmd_task_add)
 
-    p = g.add_parser("set", help="改任务状态（pending/running/done/blocked/cancelled）"
+    p = g.add_parser("set_status", help="改任务状态（pending/running/done/blocked/cancelled）"
                                  "；登记在做的人与线程只在 running 时收")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="任务：T-002")
@@ -1003,15 +1018,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--unset", action="store_true",
                    help="清掉「在做 + 线程」登记（<状态> 这时可以省）")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_task_set, shift=["ref", "status"], optional=["status"])
+    p.set_defaults(f=cmd_task_set_status, shift=["ref", "status"], optional=["status"])
 
-    p = g.add_parser("rm", help="真删一条任务（连同它的块；取消 ≠ 删除）")
+    p = g.add_parser("remove", help="真删一条任务（连同它的块；取消 ≠ 删除）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="任务：T-002")
     p.add_argument("--note", default="", help="为什么删（会记进日志）")
     p.add_argument("--force", action="store_true", help="已被别的任务依赖时仍然删")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_task_rm, shift=["ref"])
+    p.set_defaults(f=cmd_task_remove, shift=["ref"])
 
     p = g.add_parser("show", aliases=["info"], help="看一条任务的详细信息（含它的块一览，只读）")
     p.add_argument("slug", nargs="?", default="")
@@ -1282,6 +1297,12 @@ def _apply_file_mode(a) -> int:
             print(f"{_cmd_name(a)} 要 " + " ".join(f"<{d}>" for d in dests)
                   + "（文件模式下不用写 slug）", file=sys.stderr)
             return 2
+    elif a.cmd == "block" and (getattr(a, "sub", "") or "") == "set_audit" and slug:
+        # `set_audit` 的 <值> 是 nargs="*"（按空格分判据），不走定长左移；但 argparse 贪心，
+        # 位置参数 ≥3 时第一格被 slug 吃掉（ref 成了第一条判据）—— 文件模式下那格其实是 ref。
+        # （1~2 个位置参数时 argparse 已经摆对：ref 在 ref 位、判据在 value，这里不碰。）
+        a.value = ([a.ref] if a.ref is not None else []) + list(a.value or [])
+        a.ref, slug = slug, ""
     real = _slug_of_data_file()
     new_plan = (a.cmd == "plan" and (getattr(a, "sub", "") or "") == "new")
     if slug and not new_plan and slug != real:
