@@ -224,6 +224,10 @@ $LT block collapse <slug> <任务ref> [--into <块ref|任务ref>] [--keep-task]
 「收尾」泳道，别摊到每条对象泳道里。批量搬完 `block move` 会重写所有指过来的 `deps`，**搬完必须读回**
 每个下游块的 deps 条数与新 id。
 
+**建新 task 之前先读同 plan 里已有的同类 task**（`task show <slug> <T>`）并照它的块形状与现成脚本建：
+同一类活（「每个对象一条泳道」vs「一个批次一条线」）通常已经有一份可复用的映射/搬运脚本，
+另造一套就是在同一份 plan 里维护两套形状，发现后要整体返工。判据与脚本都能沿用先例的，就沿用。
+
 **两个都先查环、都能空跑**：结构改完若块依赖成环，直接报错**且 plan.json 一个字都不写**；
 `--dry-run` 只打印会改什么（新任务/新链、落点、哪些块改接线、哪些任务被删），也什么都不写 ——
 动真 plan 之前先看一眼。
@@ -303,6 +307,7 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
 
 ## 踩过的坑
 
+- **`--no-render` 必须配对一句收尾 `render`**：批量写入时省渲染没问题，但忘了收尾，用户就会看着旧看板说「我没在 011 里看到新节点」（他已经这么报过一次）。一批写入串在一条命令里时，最后补 `loomerto render <slug>` 并读回 `PLAN.md`/`plan.html` 的 mtime 与节点标题，别只看命令的成功回显。**`--no-render` 还是全局旗标、得写在子命令之前**（`loomerto --no-render block new …`）；写在子命令之后会退 2 报 `unrecognized arguments: --no-render`。
 - **跑 CLI 走 `terminal`，别包进 `execute_code` / Python subprocess**：Hermes 的危险判定是**按命令字面量**匹配的（`rm -rf` 这类串会被标成 recursive delete）。在 `terminal` 里 smart approval 会自动放行，在 `execute_code` 里却会弹同意框——60 s 没人点就超时，整个脚本**一个字都不执行**（报 BLOCKED）。所以状态写入永远直接跑 `loomerto …`，而且 **note/doc 里也不要写字面量 `rm -rf`**（写「删除」），否则同一条 `block set` 会在另一条通道被拦下。
 
 ## 命令速查
@@ -346,6 +351,7 @@ $LT block move <slug> <块ref> --task T-00N [--index N] [--note "…"]
                                          # 成环则拒改（一个字不写）；源任务空了不删。画布上的跨泳道拖走这条
 $LT block rm <slug> <块ref> [--force]     # 真删一个块（被引用时默认拒删）
 $LT note <slug> "…" --kind summary|decision|reminder [--ref T-001#B-001]
+                                         # --kind note 非法（退 2，会列出全部候选）；「这段发生了什么」用 summary
 $LT current <slug>                        # 现在该谁动
 $LT block show <slug> <块ref> [--json] [--runs N]   # 一个块的详情（只读；--runs 0 = 全列 run）
 $LT check <slug>                          # 图质量（有错误 exit 1）
@@ -420,6 +426,11 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
    结论写明、缺口按目录分布」，不要写「缺 0」—— 那是期望结果；结果一旦是否定的，块按自己的判据就不该 done，
    你只能回头改判据（本 skill 踩过）。**否定结果也照实收工**：结论与缺口分布写进 `doc` / `--note`，
    缺口处置当**待决项**交给用户，**不许为了让块通过而改判据**。
+   **自己动手造成的缺陷更不许记成 done**：会改写/删除用户数据的 impl 块，收工前自检一句
+   「有没有东西被删掉却没打算删」—— 跑批退出码 0 不等于没损失。有缺陷就把块置回 `blocked`
+   （owner = 决定怎么处置的人），`--note` 写全四样：缺陷是什么 · 影响范围（多少项 / 多少字节 / 哪些目录）·
+   恢复路径（逐条清单与恢复脚本的**绝对路径**）· 「不可恢复」这句结论的判定依据（试过哪几条路、各自结果）；
+   清单与恢复脚本挂成 `--artifact`，好让下一个人直接照着回补。
 2. **状态只从真实证据来**。别人说「我提交了」而你看不到产物 —— 记 run，状态留在 `running`，
    在 digest 里问一句。
 3. **只在状态变了才动 plan**。没变化就一句话汇报完停下，不要为了填时间线发明工作。
@@ -438,7 +449,9 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 - 传播期内 `PUT /channels/<thread>/thread-members/@me` 也会 403，**它单独不能证明 thread 是私有的**。
 - 判断「提醒通道真的通了」的唯一判据不是 `hermes send` 回显 `sent`，而是**回读那条消息的 author.id**
   等于本 profile bot 自己的 user id（`/users/@me`）。否则可能发成了别的 profile 的 bot。
-- `block set` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。
+- **`block set` / `task set` 不接受 `ready`/`waiting`（派生状态）；写 `pending` 让依赖去决定。**
+- **`note --kind note` 不存在**：合法 kind = `summary|decision|reminder|created|task|block|status|insert|assign|remove|move|expand|collapse`。写 `note` 会退 2 并把这串候选列出来；记「这一段发生了什么」用 `--kind summary`。同族提醒：**任何旗标被拒时，先读它自己打印的候选清单再重试** —— 换一个近义词继续猜（note→summary）会白多烧一轮。
+- **`block set … done` 的 `--artifact` 收多条：写完读回条数**（`block show <ref>`），只看到「✓ done」看不出少登记了哪条证据。
 - **「待认领」= 依赖就绪 且没人接**（2026-10-08 起）：一个块只要有负责人，依赖一就绪就显示成**已认领** ——
   别指望「先派活、还显示待认领」。想让它回到待认领（谁都有空谁接）就 `block assign <ref> --unset`。
   反过来 `等前置` / `待批准` 照样可以有 owner（先派活、写「等谁点头」）。
@@ -458,11 +471,16 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
   改的是**接线**（前后顺序），不是字段。**`--rm` 一条本来就不等的 = 什么都没变 ⇒ 退 2**，别把它当成功
   （说明你写的 ref 或对象不对）。改完它会打一行 ⚠：所属任务的**任务级**依赖也算它的前置（`block show` 里
   标「任务级」的那几条）。换地方（换泳道）仍走 `block move`，换粒度走 `expand` / `collapse`（顺手重接）。
+- **一块要等齐 N 条上游时，`kind=review` 会永久留一条 ⚠**（`是评审块但没写 review_of`）：`--review-of` 只收**一条** ref ⇒ 等齐 N 条的那种校验/收尾步建 `kind=impl`，前置写成一个给全的 `--deps A B C`。别为了消掉告警硬给一个上游，那等于声明它只审那一条。
+- **让 N 个下游块间接等一个共享前置：把前置挂到链上中间那一块**（`block new <中间块> --deps <共享前置>`，下游只等中间块），比逐个给下游挂 `deps` 干净（逐个挂要用 `block deps <下游块> --add <共享前置>`，各写一条接线，多一片线）。
 - **`--deps` 是 `nargs='*'`：重复写多个 `--deps` 只有最后一个生效。** 一个块要多条前置，写成
   `--deps T-004#B-001 T-005#B-001 T-006#B-001`（一个旗标跟一串），**不要** `--deps A --deps B` ——
   后者静默只留 B，图上看起来「有依赖」，实际只等一条（本 skill 踩过：总校验块本该等齐 13 条归档块，
   结果只挂了最后一条，而 `check` 不会有任何意见）。同理 `--review-of` 也只看最后一次。
-  **批量建块后的读回断言要查 deps**，别只查「doc / done_when 非空」——接线错正是那一档漏掉的。
+  同一族的 `--artifact`（只在 `done` 收，用来登记证据路径）也不要假设重复旗标会累积：**要登记多条证据，
+  就一个旗标跟一串（`--artifact a b c`），或分几条 `block set … done --artifact <一个>`（每条追一条 run）；
+  写完 `block show <ref>` 读回 artifact 的条数** —— 只回显「✓ done」看不出少了哪几条。
+  **批量建块 / 批量写证据后的读回断言要查这些字段**，别只查「doc / done_when 非空」—— 接线与证据正是那一档漏掉的。
 - **修接线错首选 `block deps <块> --deps A B C`（或 `--add` / `--rm`）**；确实要重建整块时才用下面这招 ——
   **倒着 rm 再重建**（块被下游引用时正向删会被拒）：`block rm <收口块>` →
   `block rm <校验块>` → 用一次给全的 `--deps` 重建校验块（`--no-render`）→ 再重建收口块并 `--deps`
@@ -488,10 +506,22 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
   「路径不存在 + 体积回收」再收工。
 - **block 的 `doc` 写错了要改原文**（`set … --doc`），不要把更正只留在日志里：人和 agent 读的是
   html / PLAN.md 里的 doc 原文，日志里的「纠正」救不了他 —— 他会拿着错前提来问你。
+- **改错时连带把过期的证据路径改掉**：`--artifact` 还指着被纠正前的旧路径，看板就挂一条假证据（路径已不存在）。已 `done` 的块再发一次 `block set <ref> done --artifact <新路径> --note "<为什么改>"` 即可（已 done 再收一次会追加一条 run，不报错）。
+- **用户纠正「形状」时把它落成约定，别只改这一次**：路径层级 / 命名这类形状被纠正后，`note --kind decision` 记一条（「层级 = …」）并在块的 `doc` 里引用，否则下一批同类块还会照错的形状建。
+- **用户报了几块就建几块；范围重叠用「显式排除」解决，不要提议合并**：两个删除块若按目录跑会互相吞（后一块的范围里包含前一块要处理的文件）。
+  做法是在后一块的 `doc` 里写「本块删除范围 = … 减去 `<文件>`（由 `T-00N#B-00N` 单列处理）」并把它写进判据；
+  把「要么合成一块」这种选项提出来会被否（用户原话「2 个 block，不是一个 block」）。同理，两块有先后就老实给 `--deps`
+>   （事后要加用 `block deps <后一块> --add <前一块>`）。
 - **`blocked` 在 html/canvas 里就显示为「待批准」**，所以「某块需要人点头」的表达方式就是把它置
   `blocked` 并把 owner 改成那个人；不要另外造一个「待批准」状态。
 - **改状态前先看这个块是不是已经完成**：执行方与记录员同时动手会撞出「标记 blocked / 实际已 done」的
   矛盾（曾 15 秒内撞车）。落状态前先读最新 run 与 PLAN.md 的更新时间，再决定动不动它。
+- **同一份 plan 上可能有人（另一个 profile / 另一个会话）在并行加块**：任务图会在你眼皮底下变（实测块数 46 → 56，
+  多出两条新任务且已有块在 `running`）。所以 ① 汇报进度用**刚读到的实时数**，别用几轮前的；② 建块前先读一遍，避免重复建；
+  ③ 不是自己建的块**只报告、不接管** —— 除非用户明确说「直接认领并执行即可」，那就是接手（哪怕它已被别人 `claimed` / 挂在 `running`）：
+  `block set <slug> <ref> running --by <你>` → 干完按它自己的判据 `done --artifact … --note …`，**不换 owner**（除非用户要换）。
+- **没有 `status` 子命令**：每轮汇报用的 `<已完成>/<总数>` 用 `loomerto list`（自带进度）拿，或**只读** `plan.json` 数一遍状态；
+  只读计数可以读文件，**写入一律走 CLI**。
 - 任务级依赖不写进块里，但**会被算进开工条件**：块看起来"没人挡着"却动不了时，查它所属任务的 `deps`。
 - `plan.html` 用 `file://` 打开即可，**不需要服务器**（不要为它起 http 服务）；依赖 Chrome/Safari 的
   现代 JS（无构建步骤）。
