@@ -52,8 +52,9 @@ def owner_rule(status: str) -> str:
 
 # ------------------------------------------------------------------ 块的形状（唯一一份声明）
 # 一个块**有哪些键、默认值是什么**，只有这一处。建块的那几处（`edits.add_block` /
-# `edits.insert_block` / `cli` 的 expand、collapse）一律调 `new_block()`，别各写一份字面量 ——
+# `edits.insert_block` / `cli` 的 expand、compress）一律调 `new_block()`，别各写一份字面量 ——
 # 以前同一份字典在四个地方各抄了一遍，加一个键就得追上四处，漏一处不报错、只是某些块少个键。
+# 值的写法与「谁改它」：标题/做什么/输入/输出/命令/类型/判据各有自己的 `block set_<属性>`（见 cli）。
 # 值写成工厂（`list` / `dict`）是因为可变默认值不能几个块共享同一个对象。
 BLOCK_FIELDS = {
     "id": "",
@@ -62,7 +63,10 @@ BLOCK_FIELDS = {
     "status": "blocked",     # 取值见 BLOCK_STATUS；默认「待批准」（R-10）
     "owner": "",
     "doc": "",
-    "done_when": list,
+    "input": "",             # 这一步吃什么（数据 / 路径 / 前提）—— `block set_input`
+    "output": "",            # 这一步吐什么（产物长什么样）—— `block set_output`
+    "command": "",           # 具体跑什么命令 —— `block set_command`
+    "done_when": list,       # 可核验的验收标准 —— `block set_audit`
     "artifacts": list,
     "deps": list,
     "review_of": "",
@@ -72,7 +76,7 @@ BLOCK_FIELDS = {
     "runs": list,            # [{at, by, from, to, note}]
 }
 
-# 只有粒度调整（`block collapse`）会写的历史键：不是每个块都有，所以不进 `BLOCK_FIELDS`；
+# 只有粒度调整（`block compress`）会写的历史键：不是每个块都有，所以不进 `BLOCK_FIELDS`；
 # 但它是**合法**的 —— `normalize_block()` 只补不改、不删。
 BLOCK_HISTORY_FIELDS = ("folded_from",)
 

@@ -293,7 +293,7 @@ function editor(){
       <div class="kv">能改：标题 · 做什么 · 判据 · 认领人 · 类型 · 状态（含送审 / 打回 / 收工）· 新建任务与块 · 拖块换先后 / 换任务。<br>
       跨泳道拖 = 块换 id（<code>T-00N#B-00N</code> 里第一段跟着换）+ 引用它的 <code>deps</code>/<code>review_of</code>
       自动重接；会让依赖成环时拒改并把原因说出来。<br>
-      暂不提供：删块、删任务、直接改依赖接线 —— 走命令（<code>rm</code> / <code>move</code> / <code>expand</code> / <code>collapse</code>）更安全。</div>`;
+      暂不提供：删块、删任务、直接改依赖接线 —— 走命令（<code>remove</code> / <code>bypass</code> / <code>move</code> / <code>expand</code> / <code>compress</code>）更安全。</div>`;
     return;
   }
   const parts = VIEW.participants.map(p => `<option value="${esc(p.id)}">`).join("");

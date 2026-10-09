@@ -10,12 +10,15 @@
 
 from __future__ import annotations
 
-from .model import (BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find, find_soft,
-                    guard_acyclic, log_event, new_block, next_block_id, next_ids, now)
+import re
+
+from .model import (BLOCK_FIELDS, BLOCK_STATUS, KINDS, PlanError, all_blocks, deps_of, find,
+                    find_soft, guard_acyclic, log_event, new_block, next_block_id, next_ids, now)
 
 TASK_STATUS = ["pending", "running", "done", "blocked", "cancelled"]
 
-FIELD_ZH = {"title": "标题", "doc": "做什么", "kind": "类型", "owner": "认领人"}
+FIELD_ZH = {"title": "标题", "doc": "做什么", "kind": "类型", "owner": "认领人",
+            "input": "输入", "output": "输出", "command": "命令", "done_when": "判据"}
 
 # 「改状态」时每种状态收哪些旗标 —— `set` 一个入口同时管「状态」与「身份（谁在做 + 线程）」，
 # 参数按状态限制：不是这个状态的语义就别在这个状态上给（给了 ⇒ 退 2 并列出该状态收什么）。
@@ -166,6 +169,46 @@ def edit_block(plan: dict, ref: str, *, title=None, doc=None, done_when=None, ow
     return block, changed
 
 
+def set_field(plan: dict, ref: str, key: str, value, *, note: str = "", actor: str = "agent"):
+    """改块的**一个**属性（`block set_title` / `set_doc` / `set_type` / `set_input` /
+    `set_output` / `set_command` / `set_audit` 共用的实现）—— 不动状态。返回 `(block, 原值, 新值)`。
+
+    与 `edit_block`（画布上「保存字段」一次改好几个、且只改非空的）的分工：这里是命令层的
+    「一条命令一个属性」，值**整组替换**、空串 = 清空（`title` 除外 —— 块必须有标题）。
+
+    加一个可设属性 = `model.BLOCK_FIELDS` 一处 + cli 的 `_SET_ATTRS` 一处，不必再写一条命令。
+    没有变化 ⇒ 抛 `PlanError`：调用方拿不到返回值 ⇒ 不 `commit()`（「我明明改了」而文件没动，
+    比直接报错难查得多 —— 与 `set_deps` 同一纪律）。
+    """
+    _task, block = find(plan, ref)
+    if block is None:
+        raise PlanError(f"{ref} 是任务不是块 —— `block set_*` 这几个都只改块（改任务用 `task set`）")
+    if key not in BLOCK_FIELDS:
+        raise PlanError(f"{key} 不是块的属性 —— 能设的见 `model.BLOCK_FIELDS`")
+    if key == "kind":
+        new = (value or "").strip()
+        if new not in KINDS:
+            raise PlanError(f"块类型只能是 {KINDS}")
+    elif key == "done_when":
+        new = [c.strip() for c in re.split(r"[;；]", value or "") if c.strip()]
+    elif key == "title":
+        new = (value or "").strip()
+        if not new:
+            raise PlanError("块要有标题 —— 清空标题不是一条能设的属性"
+                            "（真不要这个块了用 `block remove`）")
+    else:
+        new = (value or "").strip()
+    old = block.get(key)
+    if (list(old or []) if key == "done_when" else old) == new:
+        shown = "、".join(old or []) if key == "done_when" else (old or "")
+        raise PlanError(f"{block['id']} 的{FIELD_ZH.get(key, key)}没变（{shown or '空'}）"
+                        f"—— 没有写入任何东西")
+    block[key] = new
+    log_event(plan, "block", f"{block['id']} 改了 {FIELD_ZH.get(key, key)}"
+              + (f"（{note}）" if note else ""), actor=actor, ref=block["id"])
+    return block, old, new
+
+
 def add_task(plan: dict, title: str, *, id: str = "", owner: str = "", deps=None,
              note: str = "", actor: str = "agent"):
     """加一条任务（泳道）。返回新任务 dict。"""
@@ -313,7 +356,7 @@ def insert_block(plan: dict, anchor_ref: str, *, before: bool = True, title: str
     task, anchor = find(plan, anchor_ref)
     if anchor is None:
         raise PlanError(f"{anchor_ref} 是任务不是块 —— insert 作用于块（T-001#B-002 或 B-002）；"
-                        f"要往任务末尾加块用 `block new --task {task['id']}`")
+                        f"要往任务末尾加块用 `block add --task {task['id']}`")
     if not (title or "").strip():
         raise PlanError("块要有标题")
     if kind not in KINDS:
@@ -370,13 +413,13 @@ def move_block(plan: dict, ref: str, to_task_ref: str, *, index=None, note: str 
     （等价 `reorder_blocks`，此时 id 与接线都不动）。
 
     返回 `(block, notes)`：`notes` 是给人看的几行（换了 id / 谁改等它 / 空泳道提醒）。
-    **前后关系会成环时抛 `PlanError`** —— 与 `expand` / `collapse` 一样，调用方必须在
+    **前后关系会成环时抛 `PlanError`** —— 与 `expand` / `compress` 一样，调用方必须在
     拿到返回之后才 `commit()`（抛错时内存里的 dict 已经是脏的，别落盘）。
     """
     src, block = find(plan, ref)
     if block is None:
         raise PlanError(f"{ref} 是任务不是块 —— move 作用于块（T-001#B-002 或 B-002）；"
-                        f"要把整个任务挪走，先 `block expand` / `block collapse` 调整粒度")
+                        f"要把整个任务挪走，先 `block expand` / `block compress` 调整粒度")
     dst, _ = find(plan, to_task_ref)
     old = block["id"]
     if dst["id"] == src["id"]:                     # 同一条泳道：只改先后
@@ -427,6 +470,63 @@ def move_block(plan: dict, ref: str, to_task_ref: str, *, index=None, note: str 
               + (f"；重接接线 {len(rewired)} 处：{'、'.join(rewired)}" if rewired else "")
               + (f"（{note}）" if note else ""), actor=actor, ref=new)
     return block, notes
+
+
+def bypass_block(plan: dict, ref: str, *, note: str = "", actor: str = "agent"):
+    """把一个**中间块**从链上摘掉：它在等的前置，改成「原来等它的那些块」直接等（前后接起来）。
+
+    与 `remove` 的分工：`remove` 看见「还有别的块引用它」就停手（要人加 `--force` 自己承担
+    悬空）；`bypass` 的整个意思就是**替你把那几处接线改对再删** —— 图上不留悬空依赖，
+    也不会凭空少掉一段前置（A → B → C 摘掉 B 之后是 A → C，不是「C 谁也不等」）。
+
+    接线的语义是「等它的**全部**前置」（`deps` 是交集），所以「接起来」= 把 B 从它们的 `deps`
+    里去掉、换成 **B 自己等的那几条**（`deps` + `review_of`）。
+
+    返回 `(block, preds, users, notes)`；**成环时抛 `PlanError`** —— 与 `move` / `insert` /
+    `expand` / `compress` 同一纪律：调用方拿到返回之后才 `commit()`，抛错时一个字都不写。
+    """
+    task, block = find(plan, ref)
+    if block is None:
+        raise PlanError(f"{ref} 是任务不是块 —— bypass 作用于块（T-001#B-002 或 B-002）；"
+                        f"整条任务删掉用 `task remove {task['id']}`")
+    bid = block["id"]
+    preds, seen = [], set()
+    for d in list(deps_of(block)) + ([block["review_of"]] if block.get("review_of") else []):
+        _t, db = find_soft(plan, d)                 # 悬空依赖解析不出来就跳过（图上本来就没有它）
+        if db is not None and db["id"] != bid and db["id"] not in seen:
+            seen.add(db["id"])
+            preds.append(db["id"])
+    users, notes = [], []
+    for _t, b in all_blocks(plan):
+        if b is block:
+            continue
+        hit = False
+        if bid in deps_of(b):
+            b["deps"] = [d for d in b["deps"] if d != bid] + [p for p in preds if p not in b["deps"]]
+            hit = True
+        if b.get("review_of") == bid:
+            if not preds:
+                raise PlanError(
+                    f"{b['id']} 评审的就是 {bid}，而 {bid} 自己不等任何东西 —— 绕过它会留下一个"
+                    f"没头没尾的评审（`check` 会一直报）。先给 {b['id']} 换个评审对象，"
+                    f"或改走 `block remove {bid} --force` 自己承担那条悬空")
+            b["review_of"] = preds[-1]
+            hit = True
+        if hit:
+            users.append(b["id"])
+    if not preds and users:
+        notes.append("⚠ 它自己不等任何东西 ⇒ 原来等它的块现在谁也不等（成了新的链头）")
+    if not users:
+        notes.append("没有别的块引用它 ⇒ 等于一次 `block remove`")
+    task["blocks"] = [b for b in task["blocks"] if b is not block]
+    guard_acyclic(plan, f"绕过 {bid}")
+    if not task["blocks"]:
+        notes.append(f"⚠ 任务 {task['id']} 现在一个块都没有了（空泳道留着；删任务走 `task remove`）")
+    log_event(plan, "bypass",
+              f"绕过块 {bid}「{block['title']}」：它等的前置（{'、'.join(preds) or '无'}）"
+              f"直接接给 {'、'.join(users) or '（没人等它）'}"
+              + (f"（{note}）" if note else ""), actor=actor, ref=bid)
+    return block, preds, users, notes
 
 
 def reorder_blocks(plan: dict, task_ref: str, order):

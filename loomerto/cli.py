@@ -1,6 +1,6 @@
 """CLI 层：argparse + 24 个叶子命令 —— 一级是**对象/全局动作**（`plan` / `task` / `block` 是分组，
 `note` / `digest` / `render` / `check` / `current` / `workers` / `list` / `open` 是单层），
-动作一律放到二级（`block set` / `task rm`…）。唯一允许 print 与决定退出码的地方。
+动作一律放到二级（`block set_status` / `task rm`…）。唯一允许 print 与决定退出码的地方。
 
 别的 harness 想用这套能力，要么调这个模块的 `main()`，要么直接 import 模型 / 存储层。
 """
@@ -74,7 +74,7 @@ def cmd_task(a):
     commit(a.slug, plan, a)
     print(f"✓ {t['id']} {t['title']}")
 
-def cmd_block_new(a):
+def cmd_block_add(a):
     plan = load(a.slug)
     _t, block = edits.add_block(plan, a.task, title=a.title, kind=a.kind, doc=a.doc or "",
                                 done_when=a.done_when or [], deps=a.deps or [],
@@ -125,7 +125,7 @@ def _thread_brief(target) -> str:
 
 
 def _apply_set(a, plan, ref: str, *, is_block: bool):
-    """`block set` / `task set` 的公共实现：状态 + 身份（谁在做 / 子代理线程）一个入口。
+    """`block set_status` / `task set` 的公共实现：状态 + 身份（谁在做 / 子代理线程）一个入口。
 
     <状态> 可以省 —— 只给 `--unset` 时用来清线程登记；其余参数按状态卡
     （`edits.check_set_flags`：在途状态才收线程登记，产物只在 done 收）。
@@ -166,12 +166,12 @@ def _apply_set(a, plan, ref: str, *, is_block: bool):
     return 0
 
 
-def cmd_block_set(a):
+def cmd_block_set_status(a):
     plan = load(a.slug)
     _task, block = find(plan, a.ref)
     if block is None:
         die(f"{a.ref} 是任务不是块 —— 任务状态用 `task set {a.ref} <状态>`"
-            f"（{'/'.join(edits.TASK_STATUS)}）；块状态用 `block set <块 ref> <状态>`")
+            f"（{'/'.join(edits.TASK_STATUS)}）；块状态用 `block set_status <块 ref> <状态>`")
     return _apply_set(a, plan, a.ref, is_block=True)
 
 
@@ -179,28 +179,33 @@ def cmd_task_set(a):
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is not None:
-        die(f"{a.ref} 是块不是任务 —— 块状态用 `block set {a.ref} <状态>`"
+        die(f"{a.ref} 是块不是任务 —— 块状态用 `block set_status {a.ref} <状态>`"
             f"（{'/'.join(BLOCK_STATUS)}）；任务状态用 `task set <任务 ref> <状态>`")
     return _apply_set(a, plan, a.ref, is_block=False)
 
 
-def cmd_block_describe(a):
-    """改一个块的详情（标题/做什么/判据/类型/认领）—— **不动状态**，改动记进日志。"""
+def cmd_block_set_attr(a):
+    """`set_title` / `set_doc` / `set_type` / `set_input` / `set_output` / `set_command` /
+    `set_audit` 共用的实现：改块的**一个**属性（值可以留空 = 清空；`set_audit` 的值里用
+    `;` 分隔多条判据）—— 不动状态，改动记进日志。
+
+    分工：状态 + 身份（谁在做 / 线程）走 `block set_status`，认领人走 `block assign`，
+    其余属性一条命令一个（`a.attr` 是块的键，见 `edits.set_field`）。没变化 ⇒ `PlanError`（退 2）。
+    """
     plan = load(a.slug)
-    _task, block = find(plan, a.ref)
-    if block is None:
-        die(f"{a.ref} 是任务不是块 —— describe 只对块有用（改状态用 `block set`、"
-            f"指派用 `block assign`；任务的标题/认领在 `task new` 时给）")
-    _b, changed = edits.edit_block(plan, a.ref, title=a.title, doc=a.doc,
-                                   done_when=a.done_when, owner=a.owner, kind=a.kind,
-                                   note=a.note or "", actor=a.actor)
-    if not changed:
-        die(f"{a.ref} 没有任何字段要改 —— 给 --title / --doc / --done-when / --kind / --owner"
-            f" 里的至少一个")
+    block, old, new = edits.set_field(plan, a.ref, a.attr, a.value or "",
+                                      note=a.note or "", actor=a.actor)
     commit(a.slug, plan, a)
-    print(f"✓ {block['id']} 改了 {'、'.join(changed)}")
-    if a.done_when is not None:
-        print(f"    判据 {len(block.get('done_when') or [])} 条")
+    if a.attr == "done_when":
+        print(f"✓ {block['id']} 判据 {len(new)} 条" + (f"（原 {len(old or [])} 条）" if old else ""))
+        for c in new:
+            print(f"    · {c}")
+        return 0
+    zh = edits.FIELD_ZH.get(a.attr, a.attr)
+    shown = new if isinstance(new, str) else "、".join(new)
+    print(f"✓ {block['id']} 的{zh}：" + (f"{old} → " if old else "") + (shown or "（清空）"))
+    if not shown:
+        print(f"    这块现在没有「{zh}」了 —— `check` / 看板会照空着显示")
     return 0
 
 
@@ -269,12 +274,12 @@ def refs_of_block(plan: dict, bid: str) -> list[str]:
             out.append(b["id"])
     return out
 
-def cmd_block_rm(a):
+def cmd_block_remove(a):
     """真删一个块（取消 ≠ 删除；用户说删就删）。"""
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is None:
-        die(f"{a.ref} 是任务不是块 —— 删块用 `block rm <块 ref>`；"
+        die(f"{a.ref} 是任务不是块 —— 删块用 `block remove <块 ref>`；"
             f"连它的块一起删掉这个任务用 `task rm {a.ref}`")
     users = refs_of_block(plan, block["id"])
     if users and not a.force:
@@ -292,7 +297,7 @@ def cmd_task_rm(a):
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is not None:
-        die(f"{a.ref} 是块不是任务 —— 删这一个块用 `block rm {a.ref}`；"
+        die(f"{a.ref} 是块不是任务 —— 删这一个块用 `block remove {a.ref}`；"
             f"删它所属的任务用 `task rm {task['id']}`（连它的块一起删）")
     holders = [t["id"] for t in plan["tasks"]
                if task["id"] in (t.get("deps") or []) and t["id"] != task["id"]]
@@ -325,6 +330,22 @@ def cmd_block_move(a):
     return 0
 
 
+def cmd_block_bypass(a):
+    """把一个**中间块**从链上摘掉：它在等的前置，改成原来等它的那些块直接等（前后接起来）。
+
+    与 `block remove` 的分工：remove 看见还有人引用就停手（要人加 `--force` 承担悬空），
+    bypass 就是**替人把那几处接线改对再删** —— 图上不留悬空、也不会凭空少掉一段前置。
+    """
+    plan = load(a.slug)
+    block, preds, users, notes = edits.bypass_block(plan, a.ref, note=a.note, actor=a.actor)
+    commit(a.slug, plan, a)
+    print(f"✓ 绕过 {block['id']}「{block['title']}」（原状态 {block['status']}）")
+    print(f"    它等的前置 {('、'.join(preds)) or '（无）'} → 直接接给 {('、'.join(users)) or '（没人等它）'}")
+    for n in notes:
+        print(f"    {n}")
+    return 0
+
+
 def cmd_block_expand(a):
     """把一个块（B）展开成一个任务（T）：原块成为第一步，--step 依次追加后续步骤。
 
@@ -334,7 +355,7 @@ def cmd_block_expand(a):
     task, block = find(plan, a.ref)
     if block is None:
         die(f"{a.ref} 是任务不是块 —— expand 作用于块（T-001#B-002 或 B-002）；"
-            f"要把任务的块合并起来用 collapse")
+            f"要把任务的块合并起来用 compress")
     pre = {b["id"]: set(block_deps(plan, t, b)) for t, b in all_blocks(plan)}
     src, xid, xpos = task, block["id"], task["blocks"].index(block)
     tid = next_ids(plan, "T-", [t["id"] for t in plan["tasks"]])
@@ -415,7 +436,7 @@ def cmd_block_expand(a):
     if warn:
         print(warn)
 
-def cmd_block_collapse(a):
+def cmd_block_compress(a):
     """把一个任务（T）压成一个块（B）：各步合成一块，前后接线一次改对。
 
     块必须住在某个任务里，所以「压」要交代落点：--keep-task（留在本任务，只剩这一块）、
@@ -424,8 +445,8 @@ def cmd_block_collapse(a):
     plan = load(a.slug)
     task, block = find(plan, a.ref)
     if block is not None:
-        die(f"{a.ref} 是块不是任务 —— collapse 作用于任务（T-001），它和 `block expand` 互为逆操作；"
-            f"要把一个块单独删掉用 `block rm`")
+        die(f"{a.ref} 是块不是任务 —— compress 作用于任务（T-001），它和 `block expand` 互为逆操作；"
+            f"要把一个块单独删掉用 `block remove`")
     if a.into and a.keep_task:
         die("--into 与 --keep-task 只能给一个")
     live = [b for b in task["blocks"] if b["status"] != "cancelled"]
@@ -584,7 +605,7 @@ def cmd_block_collapse(a):
                     f"它里面的块会自动等那些任务的**所有**块 —— 换个 --into，或用 --keep-task")
         die(f"把任务 {task['id']} 压成块 {mid} 会让块依赖成环：{' → '.join(cyc)}"
             f"（没有写入任何东西）{hint}")
-    log_event(plan, "collapse",
+    log_event(plan, "compress",
               f"压缩任务 {task['id']}「{task['title']}」（{len(live)} 块 → 1 块）为 {mid}「{merged['title']}」"
               + ("（任务已删除）" if removed else "（任务保留）")
               + (f"（{a.note}）" if a.note else ""), actor=a.actor, ref=mid)
@@ -701,6 +722,8 @@ def cmd_block_show(a):
            "task": {"id": task["id"], "title": task.get("title", "")},
            "owner": block.get("owner") or "", "claimed_by": cby, "claimed_at": cat,
            "doc": block.get("doc", ""), "done_when": list(block.get("done_when") or []),
+           "input": block.get("input", ""), "output": block.get("output", ""),
+           "command": block.get("command", ""),
            "deps": block_deps(plan, task, block), "own_deps": list(block.get("deps") or []),
            "review_of": block.get("review_of", ""), "feedback": block.get("feedback", ""),
            "rework": rework, "artifacts": list(block.get("artifacts") or []), "exec": ex,
@@ -723,6 +746,9 @@ def cmd_block_show(a):
     if ex.get("transcript"):
         print(f"        转录 {ex['transcript']}")
     print(f"  做什么 {block.get('doc') or '——'}")
+    for zh, k in (("输入", "input"), ("输出", "output"), ("命令", "command")):
+        if block.get(k):
+            print(f"  {zh}  {block[k]}")
     dw = block.get("done_when") or []
     for i, c in enumerate(dw):
         print(f"  {'判据' if i == 0 else '    '}  {c}")
@@ -892,6 +918,37 @@ def cmd_digest(a):
 
 
 # ------------------------------------------------ argparse 与入口
+# 一条命令一个属性：命令名那截 → (块的键, 值那一格的说明)。加一条属性 = `model.BLOCK_FIELDS`
+# 加一个键（若还没有）+ 这里加一行 + 在 `_parser()` 的 block 组里按想要的顺序 `_add_set_attr()`。
+_SET_ATTRS = {
+    "title":   ("title",     "新标题，不能清空（块必须有标题）"),
+    "doc":     ("doc",       "留空 = 清空"),
+    "type":    ("kind",      " / ".join(KINDS)),
+    "input":   ("input",     "这一步吃什么（数据 / 路径 / 前提），留空 = 清空"),
+    "output":  ("output",    "这一步吐什么（产物长什么样），留空 = 清空"),
+    "command": ("command",   "具体跑什么命令，留空 = 清空"),
+    "audit":   ("done_when", "验收标准，多条用 ; 分隔、整组替换，留空 = 清空"),
+}
+
+
+def _add_set_attr(g, name: str) -> None:
+    """`block set_title` / `set_doc` / `set_type` / `set_input` / `set_output` / `set_command` /
+    `set_audit` 这一族解析器 —— 形状一样（`<块ref> <值>`），只有那一格的说明不同。
+
+    `<值>` 可以留空（= 清空）：文件模式下位置参数整体左移，所以它得登记在 `optional` 里
+    （见 `_apply_file_mode`），不然合法的「只给 ref」会被判成「少写了参数」。
+    """
+    key, what = _SET_ATTRS[name]
+    p = g.add_parser(f"set_{name}",
+                     help=f"改块的「{edits.FIELD_ZH.get(key, key)}」—— {what}；不动状态，改动记进日志")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("value", nargs="?", default=None, help=f"新值：{what}")
+    p.add_argument("--note", default="", help="为什么改（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_set_attr, attr=key, shift=["ref", "value"], optional=["value"])
+
+
 def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="loomerto", description="loomerto —— 一份 plan 的工具（谁认领/谁在做/下一步该谁动）")
     ap.add_argument("--no-render", action="store_true",
@@ -963,11 +1020,14 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(f=cmd_task_show, shift=["ref"])
 
     # —— block 组：任务里的块（状态、文档、结构都落在这）
-    g = sub.add_parser("block",
-                       help="块：new / insert / set / describe / assign / deps / move / expand / collapse / rm / show"
-                       ).add_subparsers(dest="sub", required=True)
-    p = g.add_parser("new", help="往一条任务末尾加块（文档）")
-    p.add_argument("slug", nargs="?", default="")
+    # 顺序 = 用户拍板的那一份（结构 → 粒度 → 读 → 接线 → 身份 → 属性，属性一组一条命令）。
+    g = sub.add_parser(
+        "block",
+        help="块：add / remove / insert / bypass / expand / compress / show / deps / assign / move / "
+             "set_title / set_doc / set_type / set_status / set_input / set_output / set_command / set_audit"
+        ).add_subparsers(dest="sub", required=True)
+    p = g.add_parser("add", help="往一条任务末尾加块（文档）")
+    p.add_argument("slug", nargs="?")
     p.add_argument("--task", required=True)
     p.add_argument("--title", required=True)
     p.add_argument("--kind", default="impl", choices=KINDS)
@@ -980,7 +1040,16 @@ def _parser() -> argparse.ArgumentParser:
                    help="建块时的初始状态。默认 blocked（=待批准：等有人点头）；"
                         "AI 判断这块无需审批就能干，就显式给 --status pending")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_new)
+    p.set_defaults(f=cmd_block_add)
+
+    p = g.add_parser("remove", help="真删一个块（取消 ≠ 删除；被别的块引用时默认拒删 —— "
+                                    "要连同接线一起改对用 `block bypass`）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("--note", default="", help="为什么删（会记进日志）")
+    p.add_argument("--force", action="store_true", help="已被别的块引用时仍然删")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_remove, shift=["ref"])
 
     p = g.add_parser("insert", help="插一个块到某个块之前/之后（前后接线一次改对）")
     p.add_argument("slug", nargs="?", default="")
@@ -994,14 +1063,97 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--owner", default="", help="默认沿用锚块的认领人")
     p.add_argument("--review-of", default="")
     p.add_argument("--status", default="blocked", choices=BLOCK_STATUS,
-                   help="同 block new：默认 blocked（待批准）")
+                   help="同 block add：默认 blocked（待批准）")
     p.add_argument("--note", default="", help="为什么插（会记进日志）")
     p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_block_insert, shift=["ref"])
 
-    p = g.add_parser("set", help="改块状态（pending/claimed/running/review/done/blocked/cancelled）"
-                                 "；登记在做的人与线程只在在途状态收（表见 docs/cli-reference.md）")
+    p = g.add_parser("bypass", help="把一个中间块从链上摘掉：它在等的前置，改成原来等它的块直接等"
+                                    "（前后接起来；成环则拒改）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="要绕过的块：T-001#B-002 或 B-002")
+    p.add_argument("--note", default="", help="为什么绕过（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_bypass, shift=["ref"])
+
+    p = g.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="要展开的块：T-001#B-002 或 B-002")
+    p.add_argument("--title", default="", help="新任务的标题（默认沿用块标题）")
+    p.add_argument("--step", action="append", default=[],
+                   help="追加的后续步骤，可多次、按顺序：标题 :: 做什么 :: 判据1;判据2 :: kind")
+    p.add_argument("--owner", default="")
+    p.add_argument("--note", default="", help="为什么展开（会记进日志）")
+    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_expand, shift=["ref"])
+
+    p = g.add_parser("compress", help="把一个任务压成一个块（默认回展开前的位置）；"
+                                      "与 `block expand` 互为逆操作（旧名 collapse 已删）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="要压缩的任务：T-001")
+    p.add_argument("--into", default="",
+                   help="压出来的块放哪：块 ref（插到它之后）或任务 ref（追加到末尾）")
+    p.add_argument("--keep-task", dest="keep_task", action="store_true",
+                   help="保留本任务，只把各块并成一块（不删任务）")
+    p.add_argument("--title", default="")
+    p.add_argument("--doc", default="", help="合并块的「做什么」；不给就拼各步的")
+    p.add_argument("--done-when", dest="done_when", action="append", default=[],
+                   help="合并块的判据；不给就取各步判据的并集（逐字保留）")
+    p.add_argument("--kind", choices=KINDS)
+    p.add_argument("--owner", default="")
+    p.add_argument("--note", default="", help="为什么压缩（会记进日志）")
+    p.add_argument("--force", action="store_true", help="各块状态不一致时仍然压")
+    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_compress, shift=["ref"])
+
+    p = g.add_parser("show", aliases=["info"],
+                     help="看一个块的详细信息（只读：状态·认领·在做·线程·做什么·输入·输出·命令·判据·依赖·run）")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
+    p.add_argument("--runs", type=int, default=5, help="列最近几条 run（0 = 全列，默认 5）")
+    p.set_defaults(f=cmd_block_show, shift=["ref"])
+
+    p = g.add_parser("deps", help="改一个块的**前置依赖**（整组替换或加减；成环则拒改、什么都不写）")
+    p.add_argument("slug", nargs="?")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("--deps", nargs="*", default=None,
+                   help="整组替换（给空 = 清空前置）；与 --add / --rm 不能同时给")
+    p.add_argument("--add", nargs="*", default=[], help="加几条前置（已在里面的跳过）")
+    p.add_argument("--rm", nargs="*", default=[], help="去掉几条前置")
+    p.add_argument("--note", default="", help="为什么改（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_deps, shift=["ref"])
+
+    p = g.add_parser("assign", help="把一个块指派给某个参与方（不动状态，改动记进日志）")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
+    p.add_argument("--to", default="", help="参与方 id（plan.json 里 participants 的 id）")
+    p.add_argument("--unset", action="store_true", help="清掉指派（回到未指派）")
+    p.add_argument("--note", default="", help="为什么（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_assign, shift=["ref"])
+
+    p = g.add_parser("move", help="把一个块移到另一条任务（泳道）：换块 id + 重接依赖接线（成环则拒改）")
+    p.add_argument("slug", nargs="?", default="")
+    p.add_argument("ref", nargs="?", default=None, help="要移的块：T-001#B-002 或 B-002")
+    p.add_argument("--task", required=True, help="落到哪条任务（泳道）：T-003")
+    p.add_argument("--index", type=int, default=None,
+                   help="插到该任务的第几位（0 起；默认追加到末尾）")
+    p.add_argument("--note", default="", help="为什么移（会记进日志）")
+    p.add_argument("--actor", default="agent")
+    p.set_defaults(f=cmd_block_move, shift=["ref"])
+
+    # —— 属性各一条：`block set_<属性> <块ref> <值>`（值留空 = 清空；加一条见 `_SET_ATTRS`）
+    _add_set_attr(g, "type")
+    _add_set_attr(g, "title")
+    _add_set_attr(g, "doc")
+
+    p = g.add_parser("set_status", help="改块状态（pending/claimed/running/review/done/blocked/cancelled）"
+                                        "；登记在做的人与线程只在在途状态收（表见 docs/cli-reference.md）")
     p.add_argument("slug", nargs="?", default="")
     p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
     p.add_argument("status", nargs="?", default=None,
@@ -1022,98 +1174,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--unset", action="store_true",
                    help="清掉「在做 + 线程」登记（<状态> 这时可以省）")
     p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_set, shift=["ref", "status"], optional=["status"])
+    p.set_defaults(f=cmd_block_set_status, shift=["ref", "status"], optional=["status"])
 
-    p = g.add_parser("describe", help="改块的详情（标题/做什么/判据/类型）——不动状态，改动记进日志")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("--title", help="新标题")
-    p.add_argument("--doc", help="新的「做什么」")
-    p.add_argument("--done-when", dest="done_when", action="append", default=None,
-                   help="新判据，可多次（给了就整组替换，一条都不给=清空）")
-    p.add_argument("--kind", choices=KINDS, help="块类型")
-    p.add_argument("--owner", default="", help="认领人（只是换人用 `block assign`）")
-    p.add_argument("--note", default="", help="为什么改（会记进日志）")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_describe, shift=["ref"])
+    _add_set_attr(g, "input")
+    _add_set_attr(g, "output")
+    _add_set_attr(g, "command")
+    _add_set_attr(g, "audit")
 
-    p = g.add_parser("assign", help="把一个块指派给某个参与方（不动状态，改动记进日志）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("--to", default="", help="参与方 id（plan.json 里 participants 的 id）")
-    p.add_argument("--unset", action="store_true", help="清掉指派（回到未指派）")
-    p.add_argument("--note", default="", help="为什么（会记进日志）")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_assign, shift=["ref"])
-
-    p = g.add_parser("deps", help="改一个块的**前置依赖**（整组替换或加减；成环则拒改、什么都不写）")
-    p.add_argument("slug", nargs="?")
-    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("--deps", nargs="*", default=None,
-                   help="整组替换（给空 = 清空前置）；与 --add / --rm 不能同时给")
-    p.add_argument("--add", nargs="*", default=[], help="加几条前置（已在里面的跳过）")
-    p.add_argument("--rm", nargs="*", default=[], help="去掉几条前置")
-    p.add_argument("--note", default="", help="为什么改（会记进日志）")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_deps, shift=["ref"])
-
-    p = g.add_parser("move", help="把一个块移到另一条任务（泳道）：换块 id + 重接依赖接线（成环则拒改）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="要移的块：T-001#B-002 或 B-002")
-    p.add_argument("--task", required=True, help="落到哪条任务（泳道）：T-003")
-    p.add_argument("--index", type=int, default=None,
-                   help="插到该任务的第几位（0 起；默认追加到末尾）")
-    p.add_argument("--note", default="", help="为什么移（会记进日志）")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_move, shift=["ref"])
-
-    p = g.add_parser("expand", help="把一个块展开成一个任务（块成为第一步，--step 追加后续步骤）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="要展开的块：T-001#B-002 或 B-002")
-    p.add_argument("--title", default="", help="新任务的标题（默认沿用块标题）")
-    p.add_argument("--step", action="append", default=[],
-                   help="追加的后续步骤，可多次、按顺序：标题 :: 做什么 :: 判据1;判据2 :: kind")
-    p.add_argument("--owner", default="")
-    p.add_argument("--note", default="", help="为什么展开（会记进日志）")
-    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_expand, shift=["ref"])
-
-    p = g.add_parser("collapse", aliases=["compress"],
-                     help="把一个任务压成一个块（默认回展开前的位置）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="要压缩的任务：T-001")
-    p.add_argument("--into", default="",
-                   help="压出来的块放哪：块 ref（插到它之后）或任务 ref（追加到末尾）")
-    p.add_argument("--keep-task", dest="keep_task", action="store_true",
-                   help="保留本任务，只把各块并成一块（不删任务）")
-    p.add_argument("--title", default="")
-    p.add_argument("--doc", default="", help="合并块的「做什么」；不给就拼各步的")
-    p.add_argument("--done-when", dest="done_when", action="append", default=[],
-                   help="合并块的判据；不给就取各步判据的并集（逐字保留）")
-    p.add_argument("--kind", choices=KINDS)
-    p.add_argument("--owner", default="")
-    p.add_argument("--note", default="", help="为什么压缩（会记进日志）")
-    p.add_argument("--force", action="store_true", help="各块状态不一致时仍然压")
-    p.add_argument("--dry-run", action="store_true", help="只打印会改什么，不落盘")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_collapse, shift=["ref"])
-
-    p = g.add_parser("rm", help="真删一个块（取消 ≠ 删除；被别的块引用时默认拒删）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("--note", default="", help="为什么删（会记进日志）")
-    p.add_argument("--force", action="store_true", help="已被别的块引用时仍然删")
-    p.add_argument("--actor", default="agent")
-    p.set_defaults(f=cmd_block_rm, shift=["ref"])
-
-    p = g.add_parser("show", aliases=["info"],
-                     help="看一个块的详细信息（只读：状态·认领·在做·线程·做什么·判据·依赖·run）")
-    p.add_argument("slug", nargs="?", default="")
-    p.add_argument("ref", nargs="?", default=None, help="块：T-002#B-001 或 B-001")
-    p.add_argument("--json", action="store_true", help="机器可读输出（给 agent 用）")
-    p.add_argument("--runs", type=int, default=5, help="列最近几条 run（0 = 全列，默认 5）")
-    p.set_defaults(f=cmd_block_show, shift=["ref"])
 
     # —— 单层命令：对整份 plan 的动作（不改一个具体对象）
     p = sub.add_parser("note", help="写一条总结/决定进日志")
@@ -1122,7 +1189,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--kind", default="summary",
                    choices=["summary", "decision", "reminder", "created", "task",
                             "block", "status", "insert", "assign", "deps", "remove", "move",
-                            "expand", "collapse"])
+                            "bypass", "expand", "collapse", "compress"])
     p.add_argument("--ref", default="")
     p.add_argument("--actor", default="agent")
     p.set_defaults(f=cmd_note, shift=["text"])
@@ -1194,8 +1261,8 @@ def _apply_file_mode(a) -> int:
     """单文件模式（`--plan <数据文件>`，或当前目录正好有 plan.json）：把 slug 那一位让出来。
 
     这些命令的第一个位置参数本来是 slug —— 文件模式下它其实是**下一个**参数
-    （`set <ref> <status>` / `exec <ref>` / `show <ref>` / `note <text>`…），所以整体左移一位：
-    `loomerto --plan ./plan.json set T-001#B-002 done`。返回非 0 表示已经报错，当退出码用。
+    （`block set_status <ref> <status>` / `block show <ref>` / `note <text>`…），所以整体左移一位：
+    `loomerto --plan ./plan.json block set_status T-001#B-002 done`。返回非 0 表示已经报错，当退出码用。
     """
     dests = list(getattr(a, "shift", []) or [])
     opt = set(getattr(a, "optional", []) or [])     # 允许留空的格子（如 `set` 的 <状态>：只给 --unset 时）
