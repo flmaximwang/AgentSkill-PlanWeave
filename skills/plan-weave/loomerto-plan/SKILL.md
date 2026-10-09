@@ -1,5 +1,5 @@
 ---
-name: maintain-a-shared-plan
+name: loomerto-plan
 description: "Use when 与人/其他 agent 协同时要维护一份共享 plan。用 loomerto CLI（loomerto --plans-root <库> <子命令> <slug>）改状态、渲染三视图、发提醒；plan.json 是唯一真相，只经 CLI 改。上下文变长（跨 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时先把后续规划、子代理分配与执行落到 plan 上。"
 version: 1.0.0
 author: Hermes Agent
@@ -8,7 +8,7 @@ metadata:
   hermes:
     tags: [plan, collaboration, multi-agent, loomerto, visualization]
     category: plan-weave
-    related_skills: [remind-collaborators, handle-a-recurring-progress-instruction, agent-to-agent-handoff]
+    related_skills: [loomerto-remind, handle-a-recurring-progress-instruction, agent-to-agent-handoff]
 ---
 
 # 维护一份共享 plan（协作计划记录员的核心动作）
@@ -296,10 +296,10 @@ $LT block show <slug> T-002#B-001    # ← 一次读全：状态 · 认领人(�
    [--task-index N] [--transcript <路径>]` —— 之后随时 `loomerto workers <slug>` 就能看出这条线程是不是还在动
    （`⚠ 线程已结束` / `❌ 号记错` 退 1：先对账再往下走）。收工或换人时 `block set … --unset`
    （`set … done` 也会自动清）。
-6. **提醒**：`loomerto digest <slug> --to <参与方>`，纪律见 skill `remind-collaborators`。
+6. **提醒**：`loomerto digest <slug> --to <参与方>`，纪律见 skill `loomerto-remind`。
 7. **交付前两条校验**（送审 / 交接 / 收尾时跑，不是每次改状态都跑）：
-   - `check-plan-node-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
-   - `check-plan-temp-hygiene`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
+   - `loomerto-check-commands`：每个块有没有可直接执行的命令、变量有没有定义 —— 缺则**不批准**（exit 1）。
+   - `loomerto-check-temps`：这份 plan 会不会留下没人清的临时文件 —— `❌ 不闭环` 时按它打印的
      `loomerto task new` / `loomerto block new` / `loomerto block set` 命令补一个收尾任务节点与「临时文件：…」声明。
    改完重跑；两条都要 `exit 0` 才往下走。
 
@@ -620,7 +620,7 @@ file://<本 profile 的 plans 根>/<slug>/plan.html
 |---|---|
 | `scripts/plan.py` | skill 侧的**旧写法薄壳**：交代 plans 根 → 找包 → 调 `loomerto.cli.main()`（找不到包时打印装法，退出码 2）。**新写命令请直接用 `loomerto`** |
 | loomerto 包（仓库根） | 实现在那里：model（模型/派生）/ store（磁盘 + 唯一写入漏斗 `commit()`）/ render（三视图）/ workers（线程探活）/ cli（唯一 print、唯一退出码）。**改实现去那里，改「怎么用」才改本文件** |
-| 兄弟 skill | `check-plan-node-commands`（每个块的命令与变量定义）、`check-plan-temp-hygiene`（临时文件闭环）、`remind-collaborators`（提醒纪律） |
+| 兄弟 skill | `loomerto-check-commands`（每个块的命令与变量定义）、`loomerto-check-temps`（临时文件闭环）、`loomerto-remind`（提醒纪律） |
 
 静态图（给聊天/群用，**只在被明确索取时才做**）落在 plan 目录的 `plan.png`；默认交付是 `file://`
 看板 URL（**不发附件、不起服务**），生成方法见文末「坑」。

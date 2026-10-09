@@ -1,5 +1,5 @@
 ---
-name: check-plan-node-commands
+name: loomerto-check-commands
 description: "Use when 要看一份 plan 每个节点有没有能直接跑的命令、可替换的变量有没有定义。缺命令或变量没定义就不批准（exit 1）。"
 version: 1.0.0
 author: Hermes Agent
@@ -8,7 +8,7 @@ metadata:
   hermes:
     tags: [plan, collaboration, commands, variables, validation]
     category: plan-weave
-    related_skills: [maintain-a-shared-plan, check-plan-temp-hygiene, remind-collaborators]
+    related_skills: [loomerto-plan, loomerto-check-temps, loomerto-remind]
 ---
 
 # 一份 plan 的节点命令校验
@@ -18,10 +18,10 @@ metadata:
 - 一份 plan 要建块 / 送审 / 交接，先回答「每个节点是不是都能照抄一条命令直接跑」。
 - 有人问「这个 plan 的节点有没有可直接执行的命令」「命令里的变量定义了吗」。
 - 你要给块补命令或补变量定义，先跑一遍看哪些块缺、缺哪个变量。
-- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `maintain-a-shared-plan` 的「会话一长，先把它落到 plan 上」。
+- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `loomerto-plan` 的「会话一长，先把它落到 plan 上」。
 
 **不属于本 skill**：
-- 临时文件有没有声明、有没有收尾节点删除 → `check-plan-temp-hygiene`（那条管临时文件闭环）。
+- 临时文件有没有声明、有没有收尾节点删除 → `loomerto-check-temps`（那条管临时文件闭环）。
 - 图质量（环 / 悬空依赖 / 无主就绪块）→ `loomerto check`。
 
 ## 判据（两条，不满足就不批准）
@@ -62,8 +62,8 @@ metadata:
 
 ```bash
 # 脚本就在本 skill 的 scripts/ 下（`skill_view` 给的 `skill_dir`）；路径与本 profile 无关：
-C=$(ls ~/.hermes/skills/*/check-plan-node-commands/scripts/check_plan_node_commands.py \
-       ~/.hermes/profiles/*/skills/*/check-plan-node-commands/scripts/check_plan_node_commands.py 2>/dev/null | head -1)
+C=$(ls ~/.hermes/skills/*/loomerto-check-commands/scripts/check_plan_node_commands.py \
+       ~/.hermes/profiles/*/skills/*/loomerto-check-commands/scripts/check_plan_node_commands.py 2>/dev/null | head -1)
 python3 "$C" build-plan-weave            # 结论 + 逐块 ❌/⚠️ 证据 + 怎么补
 python3 "$C" build-plan-weave --verbose  # 连通过的块也列出来
 python3 "$C" build-plan-weave --only T-003        # 只看某个任务

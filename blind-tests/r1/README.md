@@ -42,3 +42,8 @@ doc，顺便说下 plan.py set 能改哪些字段」）在第一版金标里把 
 3. 两个窗口都以 `Use when 要看一份 plan` 开头，靠后半句区分（「会不会留下没人清的临时文件」 vs
    「每个节点有没有能直接跑的命令」）。**下一轮若要在窗口里塞新钩子，先看会不会把这两个区分词挤出去** ——
    挤掉哪个，对应那 4 条正例就会整批转投另一半。
+
+> **改名说明（2026-10-09）**：本轮的候选名是**改名前**的旧名 —— `maintain-a-shared-plan` / `remind-collaborators`
+> / `check-plan-node-commands` / `check-plan-temp-hygiene` / `intake-a-running-collaboration`；此后依次改为
+> `loomerto-plan` / `loomerto-remind` / `loomerto-check-commands` / `loomerto-check-temps` / `loomerto-intake`。
+> 本轮的题面、金标与判官输入**保持原样不改写**（那是一次带日期的记录）。

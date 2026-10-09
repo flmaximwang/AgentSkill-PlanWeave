@@ -1,5 +1,5 @@
 ---
-name: intake-a-running-collaboration
+name: loomerto-intake
 description: "Use when 用户把你拉进别人正在跑的协作（come and help us）。先用秒级只读证据把状态写成记录。"
 version: 1.0.0
 author: Hermes Agent
@@ -8,7 +8,7 @@ metadata:
   hermes:
     tags: [multi-agent, collaboration, evidence, handoff, discord, verification]
     category: agent-orchestration
-    related_skills: [agent-to-agent-handoff, maintain-a-shared-plan, remind-collaborators]
+    related_skills: [agent-to-agent-handoff, loomerto-plan, loomerto-remind]
 ---
 
 # 接手一段已经在跑的协作（你是后进来的那个）
@@ -21,7 +21,7 @@ metadata:
 
 不适用：任务还没开始（那是普通接单）；你就是要亲手做那件事（那是执行方，不是接手方）。
 
-- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `maintain-a-shared-plan` 的「会话一长，先把它落到 plan 上」。
+- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `loomerto-plan` 的「会话一长，先把它落到 plan 上」。
 
 ## 硬前提
 

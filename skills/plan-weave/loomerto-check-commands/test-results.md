@@ -1,12 +1,12 @@
-# check-plan-node-commands · 触发路由盲测（r1，2026-10-07）
+# loomerto-check-commands · 触发路由盲测（r1，2026-10-07）
 
 - **协议**：`skill-routing-blind-test` —— 候选只给 `description` 前 57 字符 + `…`；两个独立判官
   只读同一份 `blind-tests/r1/judge-input-r1.txt`；逐题矩阵对金标。
 - **结果**：候选 13 个 skill · 16 道题 · **判官 A 16/16 · B 16/16 · 逐题 picks 完全一致** ⇒ 按协议**定版**。
 - **本 skill 的题**：P05–P08（四种提问者措辞的正例）+ P10（变体「每个节点的命令能不能直接跑、变量有没有定义」）
   —— 5/5 命中自己（两个判官都是）。
-- **分界（诱饵）**：P01–P04 / P09 是兄弟 `check-plan-temp-hygiene` 的题（临时文件闭环），
-  两个判官都投给兄弟；P15（`plan.py check` 图质量）、P16（`set` 字段）都投给 `maintain-a-shared-plan`
+- **分界（诱饵）**：P01–P04 / P09 是兄弟 `loomerto-check-temps` 的题（临时文件闭环），
+  两个判官都投给兄弟；P15（`plan.py check` 图质量）、P16（`set` 字段）都投给 `loomerto-plan`
   —— 本 skill **没有抢任何一个既有 skill 的题**。
 - **接受的代价**：本轮没有稳定漏给兄弟的正例，也没有吃掉诱饵。两个窗口都以
   `Use when 要看一份 plan` 开头，靠后半句区分：本 skill 的区分词是「**直接跑的命令 / 变量定义**」。

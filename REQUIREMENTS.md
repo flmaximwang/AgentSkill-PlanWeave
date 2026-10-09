@@ -17,11 +17,11 @@
 | **本文件 `REQUIREMENTS.md`** | **需求单一入口**：目标 / 需求条目 / 现状 / 缺口 / 决策点 | 先读这个 |
 | [`README.md`](README.md) | 仓库索引：这是干什么的、五个 skill 各是什么、安装 loop、盲测表 | 想装它 / 想找某个 skill |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | `plan.py` 全部子命令、参数、退出码（**现状清单**，逐条可与实现核对） | 要敲命令 / 要核对 CLI 面 |
-| [`skills/plan-weave/maintain-a-shared-plan/SKILL.md`](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **操作细节**：模型（plan/task/block/run/exec）、状态表、粒度调整、谁在做+线程、一次回合的固定动作、坑 | 要动手改一份 plan |
-| [`skills/plan-weave/remind-collaborators/SKILL.md`](skills/plan-weave/remind-collaborators/SKILL.md) | 提醒纪律：何时推、推给谁、静默与去重 | 要发提醒 |
-| [`skills/plan-weave/check-plan-temp-hygiene/SKILL.md`](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | 交付前校验之一：临时文件闭环 | 送审 / 交接 / 收尾 |
-| [`skills/plan-weave/check-plan-node-commands/SKILL.md`](skills/plan-weave/check-plan-node-commands/SKILL.md) | 交付前校验之二：每个节点的可执行命令与变量定义 | 送审 / 交接 / 收尾 |
-| [`skills/agent-orchestration/intake-a-running-collaboration/SKILL.md`](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | 后进来的人怎么用秒级只读证据接上（含 `references/read-only-evidence-recipes.md`） | 被 @ 进一段已经在跑的协作 |
+| [`skills/plan-weave/loomerto-plan/SKILL.md`](skills/plan-weave/loomerto-plan/SKILL.md) | **操作细节**：模型（plan/task/block/run/exec）、状态表、粒度调整、谁在做+线程、一次回合的固定动作、坑 | 要动手改一份 plan |
+| [`skills/plan-weave/loomerto-remind/SKILL.md`](skills/plan-weave/loomerto-remind/SKILL.md) | 提醒纪律：何时推、推给谁、静默与去重 | 要发提醒 |
+| [`skills/plan-weave/loomerto-check-temps/SKILL.md`](skills/plan-weave/loomerto-check-temps/SKILL.md) | 交付前校验之一：临时文件闭环 | 送审 / 交接 / 收尾 |
+| [`skills/plan-weave/loomerto-check-commands/SKILL.md`](skills/plan-weave/loomerto-check-commands/SKILL.md) | 交付前校验之二：每个节点的可执行命令与变量定义 | 送审 / 交接 / 收尾 |
+| [`skills/agent-orchestration/loomerto-intake/SKILL.md`](skills/agent-orchestration/loomerto-intake/SKILL.md) | 后进来的人怎么用秒级只读证据接上（含 `references/read-only-evidence-recipes.md`） | 被 @ 进一段已经在跑的协作 |
 | [`blind-tests/r1/`](blind-tests/r1/README.md) | description 路由盲测：题面 / 金标 / 判官 A·B / 得分矩阵 | 改了 skill 头部之后 |
 | [`docs/architecture.md`](docs/architecture.md) | 拆分后的模块边界、跨 harness 的三条约定、怎么接新前端（画布写回 / web 服务）、改代码前的三道闸 | 要动结构 / 要接别的 harness |
 | [`docs/canvas-sync.md`](docs/canvas-sync.md) | **画布写回协议**（R-02）：`GET/POST /api/plan` 的字段、五个 `op`、`rev` 冲突与幂等、以及**故意不做**的四件事 | 要改画布 / 接第二个前端 |
@@ -101,12 +101,12 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | R-19 顺带给 `check` 补一条「块形状」硬校验（缺键 / 类型不对 ⇒ ✗ 退 1） | 落点 = `cli.cmd_check`：`model.normalize_block` 只补不改，所以「缺什么」要**在补之前**读（`store.load()` 已经补过了 ⇒ 校验得改成读原始文件，或让 `load()` 把「补了哪些键」带出来）。**难度在这**：`load()` 现在是无返回值地补齐，`check` 想报「这份 plan 的哪几个块缺键」就得先想清这条信息怎么传（不建议让 `list`/`current` 这些只读命令也跟着报）。B 档只做收口，这条留待拍板 |
 | R-20 C 档 / R-21 D 档 | 都已开 issue（[#1](https://github.com/flmaximwang/Loomerto/issues/1) / [#2](https://github.com/flmaximwang/Loomerto/issues/2)）；真要做时落点都在 `model`（形状与派生之上），**不动 `plan.json` 结构、不动 `canvas-sync` 协议** |
 
-**skill 副本的拉平记录（2026-10-08，B 档）**：`skills/plan-weave/maintain-a-shared-plan/SKILL.md` 与
-`skills/plan-weave/check-plan-node-commands/SKILL.md` 是**发布源**；default profile 里装的副本在
+**skill 副本的拉平记录（2026-10-08，B 档）**：`skills/plan-weave/loomerto-plan/SKILL.md` 与
+`skills/plan-weave/loomerto-check-commands/SKILL.md` 是**发布源**；default profile 里装的副本在
 `~/.hermes/skills/loomerto/<同名目录>/`，改完 `cp` 过去再 `diff -rq`（除 `.DS_Store` 外应为空）。
 `plan-weave` profile 那份（`~/.hermes/profiles/plan-weave/skills/plan-weave/`）是旧一代，**不动**。
 
-**R-22 的拉平（2026-10-08）**：`block deps` 那几段在**两份都改了**（仓库源 + `~/.hermes/skills/loomerto/maintain-a-shared-plan/SKILL.md`）
+**R-22 的拉平（2026-10-08）**：`block deps` 那几段在**两份都改了**（仓库源 + `~/.hermes/skills/loomerto/loomerto-plan/SKILL.md`）
 —— 没有整份 `cp`：default profile 的副本目前**另有会话写进去的段落**（约 100 行：`--no-render` 收尾、并行建块、
 `--artifact` 一串写法等），仓库源还没有那份回移植。所以这一轮的拉平是「同一段改动分别打在两份上」，
 `diff -rq` **不为空是预期的**，别拿它当漏改的判据（用 `grep -c "block deps"` 两份都该有：仓库源 4 处、profile 副本 6 处

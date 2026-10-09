@@ -1,5 +1,5 @@
 ---
-name: remind-collaborators
+name: loomerto-remind
 description: "Use when 要提醒人或别的 agent 按 plan 推进。先算清该谁动、只推一件事、带上 plan 路径；包含静默与去重纪律。"
 version: 1.0.0
 author: Hermes Agent
@@ -8,7 +8,7 @@ metadata:
   hermes:
     tags: [reminder, collaboration, multi-agent, notification, noise-control]
     category: plan-weave
-    related_skills: [maintain-a-shared-plan, handle-a-recurring-progress-instruction]
+    related_skills: [loomerto-plan, handle-a-recurring-progress-instruction]
 ---
 
 # 提醒别人（和别的 agent）按 plan 推进
@@ -18,7 +18,7 @@ metadata:
 - 有人/某个 agent 该动下一块了；或一块悬置太久、被评审打回、被阻塞需要决定。
 - 定时（cron / 心跳）触发的进度检查。
 - **不适用**：没有变化的时候。没变化就一句话说完，不要提醒。
-- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块提醒 —— 动作见 `maintain-a-shared-plan` 的「会话一长，先把它落到 plan 上」。
+- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块提醒 —— 动作见 `loomerto-plan` 的「会话一长，先把它落到 plan 上」。
 
 ## 一条提醒的构成
 

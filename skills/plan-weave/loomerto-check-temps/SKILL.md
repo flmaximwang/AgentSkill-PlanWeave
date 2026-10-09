@@ -1,5 +1,5 @@
 ---
-name: check-plan-temp-hygiene
+name: loomerto-check-temps
 description: "Use when 要看一份 plan 会不会留下没人清的临时文件。逐块扫生产证据 / 声明 / 收尾节点，给 ✅⚠️❌➖ 判定，并给出要补的 loomerto 命令。"
 version: 1.0.0
 author: Hermes Agent
@@ -8,7 +8,7 @@ metadata:
   hermes:
     tags: [plan, collaboration, hygiene, temporary-files, validation]
     category: plan-weave
-    related_skills: [maintain-a-shared-plan, check-plan-node-commands, remind-collaborators]
+    related_skills: [loomerto-plan, loomerto-check-commands, loomerto-remind]
 ---
 
 # 一份 plan 的临时文件卫生校验
@@ -18,12 +18,12 @@ metadata:
 - 一份 plan 快收尾 / 要送审了，先回答「跑完之后会不会在盘上留下一堆没人管的临时文件」。
 - 有人问「这个 plan 有没有人清临时文件」「会不会留下混乱的中间产物」。
 - 你要给一份 plan 补「临时文件声明 + 收尾节点」，先跑一遍看缺什么。
-- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `maintain-a-shared-plan` 的「会话一长，先把它落到 plan 上」。
+- **会话上下文变长**（跨了 3+ 回合 / 要向接手的人解释背景 / 多条线并行）时：先把后续规划、子代理分配与执行都落成 plan 的块，再按块推进 —— 动作见 `loomerto-plan` 的「会话一长，先把它落到 plan 上」。
 
 **不属于本 skill**：
-- 命令本身能不能直接跑、可替换的变量有没有定义 → `check-plan-node-commands`（那条管命令，这条管**临时文件闭环**）。
+- 命令本身能不能直接跑、可替换的变量有没有定义 → `loomerto-check-commands`（那条管命令，这条管**临时文件闭环**）。
 - 图质量（环 / 悬空依赖 / 无主就绪块 / 悬置超时）→ `loomerto check`。
-- 提醒的时机与去重 → `remind-collaborators`。
+- 提醒的时机与去重 → `loomerto-remind`。
 
 ## 判据（三问，每问都给证据）
 
@@ -60,8 +60,8 @@ metadata:
 
 ```bash
 # 脚本就在本 skill 的 scripts/ 下（`skill_view` 给的 `skill_dir`）；路径与本 profile 无关：
-C=$(ls ~/.hermes/skills/*/check-plan-temp-hygiene/scripts/check_plan_temp_hygiene.py \
-       ~/.hermes/profiles/*/skills/*/check-plan-temp-hygiene/scripts/check_plan_temp_hygiene.py 2>/dev/null | head -1)
+C=$(ls ~/.hermes/skills/*/loomerto-check-temps/scripts/check_plan_temp_hygiene.py \
+       ~/.hermes/profiles/*/skills/*/loomerto-check-temps/scripts/check_plan_temp_hygiene.py 2>/dev/null | head -1)
 python3 "$C" drive-sync                 # 默认：结论 + 前 8 条证据 + 声明 + 收尾节点 + 建议
 python3 "$C" drive-sync --evidence      # 证据全列
 python3 "$C" drive-sync --strict        # 把「写文件形态」也算生产证据
@@ -94,7 +94,7 @@ python3 "$C" <slug> --plans-root <dir>  # 不在本 profile 的 plans 目录里�
 - **位置判据是软的，所以只报 ⚠️**：收尾节点是否「晚于所有生产块」按 `plan.json` 里的顺序
   （任务序 → 块序）算，而生产块集合来自文本证据、可能有噪声 ⇒ 位置偏早时**点名**晚于它的块，让人判。
 - **`loomerto` 改不了块的位置**：`set` 只能改状态与文档；移位置要 `expand` / `collapse` 或重建块
-  （见 `maintain-a-shared-plan`）。
+  （见 `loomerto-plan`）。
 - **声明有四种写法，任一即算**：① 块 doc 里一行 `临时文件：<路径/glob>`；② 产物（`artifacts`）字段
   指向临时路径（`/tmp`、`scratch`、`_migrate` …）；③ `temps` / `tmp_paths` 结构化字段；④ plan 的 goal 里
   一行同形声明。**不要**把「声明」理解成必须新建字段 —— 这个 pack 里没人用 `temps`，产物字段就够。

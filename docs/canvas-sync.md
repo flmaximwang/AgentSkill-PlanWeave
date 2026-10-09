@@ -2,7 +2,7 @@
 
 > 这份文件写给**接第二个前端**的人（另一个 web 服务、别的画布、一个 IDE 插件）。
 > 参考实现 = `loomerto/serve.py` + `loomerto/assets/canvas.html`。模型与操作纪律见
-> [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)，
+> [`../skills/plan-weave/loomerto-plan/SKILL.md`](../skills/plan-weave/loomerto-plan/SKILL.md)，
 > 需求见 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)。
 
 ## 0. 三条不许破的规矩

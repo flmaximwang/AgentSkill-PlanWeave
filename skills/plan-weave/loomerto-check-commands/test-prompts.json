@@ -22,11 +22,11 @@
   {
     "id": 5,
     "prompt": "这个 plan 跑完会不会留下没人清的临时文件？",
-    "expected": "这是 check-plan-temp-hygiene 的题（临时文件闭环：生产证据 / 声明 / 收尾节点），不是命令可执行性；应转给那条 skill，不要用本 skill 的命令判据去答。"
+    "expected": "这是 loomerto-check-temps 的题（临时文件闭环：生产证据 / 声明 / 收尾节点），不是命令可执行性；应转给那条 skill，不要用本 skill 的命令判据去答。"
   },
   {
     "id": 6,
     "prompt": "帮我把某个块的 doc 改一下，顺便告诉我 plan.py block describe 和 block set 都能改哪些字段。",
-    "expected": "属于 maintain-a-shared-plan（改详情走 block describe 的 --title/--doc/--done-when/--kind，改状态与身份走 block set --doc/--done-when/--artifact/--owner/--by；块位置不能用这两个命令改），不是本 skill。"
+    "expected": "属于 loomerto-plan（改详情走 block describe 的 --title/--doc/--done-when/--kind，改状态与身份走 block set --doc/--done-when/--artifact/--owner/--by；块位置不能用这两个命令改），不是本 skill。"
   }
 ]

@@ -5,7 +5,7 @@
 > [`../REQUIREMENTS.md`](../REQUIREMENTS.md) R-22）；命令面其余部分与 `f9b91b0`（分支 `feat/block-schema`，
 > 动的是「块的形状怎么声明」：`model.BLOCK_FIELDS` + `new_block()` + `normalize_block()`，R-19）逐字节相同）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
-> [`../skills/plan-weave/maintain-a-shared-plan/SKILL.md`](../skills/plan-weave/maintain-a-shared-plan/SKILL.md)。
+> [`../skills/plan-weave/loomerto-plan/SKILL.md`](../skills/plan-weave/loomerto-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
 > ```bash
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
@@ -30,7 +30,7 @@ python3 <skill>/scripts/plan.py <全局旗标> <子命令> [参数]   # skill �
 ```
 
 ```bash
-py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py
+py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/scripts/plan.py
 ```
 
 - 纯 stdlib、零依赖、**不需要服务**；`requires-python >= 3.9`。
@@ -241,7 +241,7 @@ py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/maintain-a-shar
 
 ### `digest` — 生成提醒/摘要文本
 `py digest <slug> [--to <参与方 id 或 you>] [--format discord|md] [--stale-hours 24]`
-- 提醒的四个要件与「什么时候不推」的纪律见 skill `remind-collaborators`。
+- 提醒的四个要件与「什么时候不推」的纪律见 skill `loomerto-remind`。
 
 ## 6. 打开可编辑的画布
 

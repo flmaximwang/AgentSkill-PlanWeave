@@ -8,7 +8,7 @@
   名字 = **loom + concerto**：协奏曲里**独奏与乐队主次分明、却同演一曲** —— 正对「一个人 + 几个 agent
   在同一份 plan 上各按自己的声部推进，谁主谁次写在脸上」；loom 那一半接着说多条工作线被织成一块布。
 - **skill**：`skills/` 下的五条，随包发布（本机装在 **default** profile、类目 `loomerto`；其中
-  `intake-a-running-collaboration` 按仓库路径归 `agent-orchestration`）。skill 不夹带实现，
+  `loomerto-intake` 按仓库路径归 `agent-orchestration`）。skill 不夹带实现，
   只带一个薄壳（`scripts/plan.py`）去调这个包。
 - **public 仓库**：内容与具体机器无关，可分享。
 
@@ -18,7 +18,7 @@
   它里面有一张完整的文档地图（哪类细节去哪份文件）。需求不散落在各 skill 正文里。
 - **包怎么分层 / 怎么接新前端（画布写回、web 服务）/ 改代码前的三道闸** → [`docs/architecture.md`](docs/architecture.md)。
 - **敲命令 / 核对 CLI 面** → [`docs/cli-reference.md`](docs/cli-reference.md)（15 个子命令逐条，含退出码与全局旗标）。
-- **动手改一份 plan** → [`skills/plan-weave/maintain-a-shared-plan/SKILL.md`](skills/plan-weave/maintain-a-shared-plan/SKILL.md)（模型 / 状态表 / 谁在做+线程 / 坑）。
+- **动手改一份 plan** → [`skills/plan-weave/loomerto-plan/SKILL.md`](skills/plan-weave/loomerto-plan/SKILL.md)（模型 / 状态表 / 谁在做+线程 / 坑）。
 - 本文件剩下的部分 = 仓库索引：五条 skill 各是什么、怎么装、盲测记录。
 
 ## 装什么（两条腿）
@@ -39,11 +39,11 @@ plan 在哪**不靠猜、也不认任何 harness**：`--plan <plan 数据文件>
 **2）skill**（把「怎么用这个包」交给 AI；三段式标识符，按仓库内路径，**不需要 tap**；`--category` 只决定落点）：
 
 ```bash
-for s in "plan-weave/maintain-a-shared-plan:loomerto" \
-         "plan-weave/remind-collaborators:loomerto" \
-         "plan-weave/check-plan-temp-hygiene:loomerto" \
-         "plan-weave/check-plan-node-commands:loomerto" \
-         "agent-orchestration/intake-a-running-collaboration:agent-orchestration"; do
+for s in "plan-weave/loomerto-plan:loomerto" \
+         "plan-weave/loomerto-remind:loomerto" \
+         "plan-weave/loomerto-check-temps:loomerto" \
+         "plan-weave/loomerto-check-commands:loomerto" \
+         "agent-orchestration/loomerto-intake:agent-orchestration"; do
   path="${s%%:*}"; cat="${s##*:}"
   hermes skills install \
     "flmaximwang/Loomerto/skills/$path" --category "$cat" -y
@@ -70,10 +70,10 @@ done
 它会明确告诉你 `uv tool install --editable <repo>`（而不是抛一个看不懂的 ImportError）。
 
 **但 skill 正文一律写 `loomerto`，不写薄壳路径**（2026-10-08 改）：原先正文给的
-`$P = <profile>/skills/plan-weave/maintain-a-shared-plan/scripts/plan.py` 是**仓库内布局**，
+`$P = <profile>/skills/plan-weave/loomerto-plan/scripts/plan.py` 是**仓库内布局**，
 装进 profile 后真实位置是 `skills/loomerto/…` —— 路径根本不存在，agent 找不到薄壳就**自己写 python
 去改 `plan.json`**（漏掉三视图同步与事件日志）。现在四条 skill 一律给 `loomerto --plans-root … <子命令> <slug>`，
-`maintain-a-shared-plan` 另加「硬规则 0：改 plan 只走 loomerto 命令」；两个 check skill 的 `$C`
+`loomerto-plan` 另加「硬规则 0：改 plan 只走 loomerto 命令」；两个 check skill 的 `$C`
 改成按 `~/.hermes/skills/*/<名字>/scripts/` 现算，不再写死某个 profile 的路径。
 
 **本仓库是这些 skill 与这个包的唯一 source of truth**：改这里 → `git push` → `hermes skills update <name>` 取新版。
@@ -82,14 +82,14 @@ done
 
 | skill | 用途 | 可执行入口 |
 |---|---|---|
-| [maintain-a-shared-plan](skills/plan-weave/maintain-a-shared-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomerto <command> <slug>`（skill 里另有旧写法薄壳 `scripts/plan.py`，等价） |
-| [remind-collaborators](skills/plan-weave/remind-collaborators/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomerto digest <slug> --to <参与方>` |
-| [check-plan-temp-hygiene](skills/plan-weave/check-plan-temp-hygiene/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
-| [check-plan-node-commands](skills/plan-weave/check-plan-node-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
-| [intake-a-running-collaboration](skills/agent-orchestration/intake-a-running-collaboration/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
+| [loomerto-plan](skills/plan-weave/loomerto-plan/SKILL.md) | **核心动作**：一份 plan 的建立、改状态、渲染三视图（`PLAN.md` / `plan.html` / `plan.canvas`）、图质量自检。`plan.json` 是唯一真相，视图永远自动生成 | `loomerto <command> <slug>`（skill 里另有旧写法薄壳 `scripts/plan.py`，等价） |
+| [loomerto-remind](skills/plan-weave/loomerto-remind/SKILL.md) | **提醒的那一半**：一条提醒的四个要件（块 id / plan 绝对路径 / 一条能做的下一步 / 给人时那行 `plan.html` 的 `file://` URL），以及「什么时候不推」的静默与去重纪律 | `loomerto digest <slug> --to <参与方>` |
+| [loomerto-check-temps](skills/plan-weave/loomerto-check-temps/SKILL.md) | **交付前校验之一**：这份 plan 会不会留下没人清的临时文件（生产证据 / 声明 / 收尾节点三问），`❌ 不闭环` 时给出要补的任务节点与声明命令 | `scripts/check_plan_temp_hygiene.py <slug>` |
+| [loomerto-check-commands](skills/plan-weave/loomerto-check-commands/SKILL.md) | **交付前校验之二**：每个节点有没有可直接执行的命令、可替换的变量有没有定义；缺则**不批准**（exit 1），并逐块给出补法 | `scripts/check_plan_node_commands.py <slug>` |
+| [loomerto-intake](skills/agent-orchestration/loomerto-intake/SKILL.md) | **后进来的人**：用户把你 @ 进一段别人已经在跑的协作时，先用秒级只读证据（进度行 / `/proc` 判活 / 双测速率 / mtime 归属）把状态写成记录，且不碰对方正在跑的东西 | `references/read-only-evidence-recipes.md` |
 
 五条 skill 的类目不统一（四条 `plan-weave`、一条 `agent-orchestration`），因为类目是**安装落点**，
-而 `intake-a-running-collaboration` 与 `agent-orchestration` 类目下的
+而 `loomerto-intake` 与 `agent-orchestration` 类目下的
 `agent-to-agent-handoff` / `agent-handoff-and-review` / `agent-handoff-spec` 是同一套协作程序的两半。
 仓库内路径的第一段与安装类目保持一致，安装后 profile 里的树形与仓库逐字节相同。
 
@@ -110,7 +110,7 @@ done
 产物在 `blind-tests/r1/`（题面 / 金标 / 判官输入 / 判官 A·B / 得分矩阵 / 轮次说明）；逐题矩阵与
 「接受的代价」（下一轮往窗口塞新钩子时不许挤掉的区分词）在各 skill 的 `test-results.md`。
 
-## skills/plan-weave/maintain-a-shared-plan
+## skills/plan-weave/loomerto-plan
 
 **一份 plan 的全生命周期**。模型借自 [GaosCode/PlanWeave](https://github.com/GaosCode/PlanWeave)（那个项目另有其名与本包无关）：
 plan → task（节点，可带任务级 `deps`）→ block（**一份可独立认领、可被评审的工作**，约定上要有 `doc` 与
@@ -132,7 +132,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   拿不准的写「待确认」）→ `block set`（只改受影响的块，带 `--by` / `--note`；派给子代理时同一句里
   补 `--delegation` / `--transcript`）→ `check`（环 / 悬空依赖 / 已认领却没写负责人 / 悬置超时，
   **有错误就别往下走**）→ `workers`（每个在途块的线程还在动吗）→ `digest`（提醒，纪律见
-  `remind-collaborators`）。
+  `loomerto-remind`）。
   补记过去的时间用 `--at <ISO8601>`，不要假装是现在。
 - **谁认领了 / 谁在做 / 线程在哪**：一个块上站着两个人 —— `owner`（认领人）与 `exec.by`（此刻动手的那个），
   第三个字段 `exec.delegation` / `transcript` 给出**具体的子代理线程**（`deleg_05e3c787#0` 与它的转录文件）。
@@ -153,7 +153,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
 - **实现**在仓库根的 `loomerto/` 包里（`model` / `store` / `render` / `workers` / `cli` 五层，见
   [`docs/architecture.md`](docs/architecture.md)）；命令速查表在 SKILL.md，可直接复制。
 
-## skills/plan-weave/remind-collaborators
+## skills/plan-weave/loomerto-remind
 
 提醒的那一半 —— **这条 skill 里纪律比格式重要**。一条合格的提醒有四个要件，缺一个就是唠叨：
 块 id（`T-004#B-001`，不是「那个配 token 的事」）、plan 文件的绝对路径（这是别的 agent 唯一的入口，
@@ -169,7 +169,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   只发聊天里一句话不带路径（三天后没人找得到）；用「@所有人」代替「@该动的人」；
   用户没要求就把定时提醒开起来（会一直烧 token —— **开之前先问**）。
 
-## skills/agent-orchestration/intake-a-running-collaboration
+## skills/agent-orchestration/loomerto-intake
 
 **你是后进来的那个**：用户把你 @ 进一条已经有别的 agent 在跑的 thread（典型开场
 「come and help us」），工作正在同时进行，而你**不能碰**他正在跑的东西。你的产物是**记录**，不是他的动作。
@@ -190,7 +190,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
   `references/read-only-evidence-recipes.md`；所有远端检查都套在 `perl -e 'alarm shift; exec @ARGV' 60`
   里（macOS 没有 GNU `timeout`，挂住的命令永远不会返回）。
 
-## skills/plan-weave/check-plan-temp-hygiene
+## skills/plan-weave/loomerto-check-temps
 
 **交付前的第一问：跑完之后会不会在盘上留下一堆没人管的临时文件。** 判据三问，每问都给证据：
 
@@ -210,7 +210,7 @@ plan → task（节点，可带任务级 `deps`）→ block（**一份可独立�
 - 实测基线（2026-10-07，9 份 plan / 337 块）：`➖` 6 份 · `⚠️` 1（drive-sync）· `❌` 2
   （lab-migration 的 `/Volumes/SSD/_migrate/*` 暂存区、repo05-annex-recovery 的 `/tmp/quarantine_move.sh`）。
 
-## skills/plan-weave/check-plan-node-commands
+## skills/plan-weave/loomerto-check-commands
 
 **交付前的第二问：每个节点是不是都能照抄一条命令直接跑。** 两条判据：每个块至少一条可直接执行的命令
 （`cmds` 字段 / doc 的代码围栏 / 行内反引号，三处任一）；命令里每个可替换变量都有明确来源（块 `vars`、

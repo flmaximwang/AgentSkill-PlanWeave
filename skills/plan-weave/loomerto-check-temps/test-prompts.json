@@ -22,11 +22,11 @@
   {
     "id": 5,
     "prompt": "这个 plan 的每个节点有没有能直接照抄跑的命令，变量都定义了吗？",
-    "expected": "这是 check-plan-node-commands 的题（命令可执行性），不是临时文件卫生：应转给那条 skill，逐块查命令来源（cmds / 围栏 / 反引号）与变量定义四来源，缺则不批准。"
+    "expected": "这是 loomerto-check-commands 的题（命令可执行性），不是临时文件卫生：应转给那条 skill，逐块查命令来源（cmds / 围栏 / 反引号）与变量定义四来源，缺则不批准。"
   },
   {
     "id": 6,
     "prompt": "plan.py check 报了几个告警，帮我看下这个 plan 有没有环、有没有无主块。",
-    "expected": "属于 maintain-a-shared-plan 的 plan.py check（图质量：环 / 悬空依赖 / 无主就绪块 / 悬置超时），不是本 skill 的临时文件卫生判据。"
+    "expected": "属于 loomerto-plan 的 plan.py check（图质量：环 / 悬空依赖 / 无主就绪块 / 悬置超时），不是本 skill 的临时文件卫生判据。"
   }
 ]
