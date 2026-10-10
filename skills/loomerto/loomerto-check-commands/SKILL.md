@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [plan, collaboration, commands, variables, validation]
-    category: plan-weave
+    category: loomerto
     related_skills: [loomerto-plan, loomerto-check-temps, loomerto-remind]
 ---
 

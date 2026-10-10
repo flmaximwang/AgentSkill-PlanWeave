@@ -17,11 +17,11 @@
 | **本文件 `REQUIREMENTS.md`** | **需求单一入口**：目标 / 需求条目 / 现状 / 缺口 / 决策点 | 先读这个 |
 | [`README.md`](README.md) | 仓库索引：这是干什么的、五个 skill 各是什么、安装 loop、盲测表 | 想装它 / 想找某个 skill |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | `plan.py` 全部子命令、参数、退出码（**现状清单**，逐条可与实现核对） | 要敲命令 / 要核对 CLI 面 |
-| [`skills/plan-weave/loomerto-plan/SKILL.md`](skills/plan-weave/loomerto-plan/SKILL.md) | **操作细节**：模型（plan/task/block/run/exec）、状态表、粒度调整、谁在做+线程、一次回合的固定动作、坑 | 要动手改一份 plan |
-| [`skills/plan-weave/loomerto-remind/SKILL.md`](skills/plan-weave/loomerto-remind/SKILL.md) | 提醒纪律：何时推、推给谁、静默与去重 | 要发提醒 |
-| [`skills/plan-weave/loomerto-check-temps/SKILL.md`](skills/plan-weave/loomerto-check-temps/SKILL.md) | 交付前校验之一：临时文件闭环 | 送审 / 交接 / 收尾 |
-| [`skills/plan-weave/loomerto-check-commands/SKILL.md`](skills/plan-weave/loomerto-check-commands/SKILL.md) | 交付前校验之二：每个节点的可执行命令与变量定义 | 送审 / 交接 / 收尾 |
-| [`skills/agent-orchestration/loomerto-intake/SKILL.md`](skills/agent-orchestration/loomerto-intake/SKILL.md) | 后进来的人怎么用秒级只读证据接上（含 `references/read-only-evidence-recipes.md`） | 被 @ 进一段已经在跑的协作 |
+| [`skills/loomerto/loomerto-plan/SKILL.md`](skills/loomerto/loomerto-plan/SKILL.md) | **操作细节**：模型（plan/task/block/run/exec）、状态表、粒度调整、谁在做+线程、一次回合的固定动作、坑 | 要动手改一份 plan |
+| [`skills/loomerto/loomerto-remind/SKILL.md`](skills/loomerto/loomerto-remind/SKILL.md) | 提醒纪律：何时推、推给谁、静默与去重 | 要发提醒 |
+| [`skills/loomerto/loomerto-check-temps/SKILL.md`](skills/loomerto/loomerto-check-temps/SKILL.md) | 交付前校验之一：临时文件闭环 | 送审 / 交接 / 收尾 |
+| [`skills/loomerto/loomerto-check-commands/SKILL.md`](skills/loomerto/loomerto-check-commands/SKILL.md) | 交付前校验之二：每个节点的可执行命令与变量定义 | 送审 / 交接 / 收尾 |
+| [`skills/loomerto/loomerto-intake/SKILL.md`](skills/loomerto/loomerto-intake/SKILL.md) | 后进来的人怎么用秒级只读证据接上（含 `references/read-only-evidence-recipes.md`） | 被 @ 进一段已经在跑的协作 |
 | [`blind-tests/r1/`](blind-tests/r1/README.md) | description 路由盲测：题面 / 金标 / 判官 A·B / 得分矩阵 | 改了 skill 头部之后 |
 | [`docs/architecture.md`](docs/architecture.md) | 拆分后的模块边界、跨 harness 的三条约定、怎么接新前端（画布写回 / web 服务）、改代码前的三道闸 | 要动结构 / 要接别的 harness |
 | [`docs/canvas-sync.md`](docs/canvas-sync.md) | **画布写回协议**（R-02）：`GET/POST /api/plan` 的字段、五个 `op`、`rev` 冲突与幂等、以及**故意不做**的四件事 | 要改画布 / 接第二个前端 |
@@ -54,7 +54,7 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | **R-08** | 工程形态：能当**跨 harness 的工作台**，同时**自己不是 harness 应用**；核心可被别的程序用，CLI 只是其中一层 | 已拆成 6 层，包在**仓库根** `loomerto/`：`model` / `store` / `render` / `edits` / `serve` / `workers` / `cli`。核心不 print、不 `sys.exit`（抛 `PlanError`），所有写入过 `store.commit()` 一处、所有改动过 `edits` 一处；别的程序 `import loomerto` 即可用；skill 侧只留一个薄壳 `scripts/plan.py` | 已落地 |
 | **R-09** | 把目前支持的 CLI 操作**整理出来回报** | [`docs/cli-reference.md`](docs/cli-reference.md)：12 个一级命令（`plan` / `task` / `block` 三个分组 + 8 个单层动作）逐条列参数与退出码；改过命令就重跑文件头那段 `for c in … --help` 生成底稿，别手抄 | 已落地 |
 | **R-10** | **新建节点默认是「待批准」**（`blocked`），而不是 `pending`；只有当 AI 判断这块无需审批就能干时，才用 `pending` | `block add` / `block insert` 的 `--status` 默认是 `blocked`（=界面上「待批准」，等有人点头）；`--status pending` 是显式放行。`block expand --step` 追加的步骤仍是 `pending`（见 §4 说明） | 已落地 |
-| **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（intake 归 `agent-orchestration`），lock 的 identifier/URL 指向 `flmaximwang/Loomerto`、revision `7eed38f`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`，identifier 仍是旧仓库名），待随该 bot 退役一并清 | 已落地 |
+| **R-11** | **这个 repo 本身升级成一个「带 skill 的 AI 原生 python 包」**：包放仓库根目录，skill 随包发布；包名要**与 GitHub 上已有的项目区分开** | 包已落在仓库根 `loomerto/`（`pyproject.toml` + console scripts `loomerto`／`plan` + 包数据 `assets/plan.html`）；skill 只带薄壳。**命名依据**：① `PlanWeave` 已被 [`GaosCode/PlanWeave`](https://github.com/GaosCode/PlanWeave)（★411，正是我们借模型的那个项目）占用，`planweave` 与它直接撞名；② 最终名 **loomerto = loom + concerto**，取协奏曲「独奏与乐队主次分明、却同演一曲」的意象（一个人 + 几个 agent 各按声部推进同一份 plan）。冲突筛查（2026-10-07 实测）：PyPI `loomerto` **未注册**、GitHub **无同名仓库**（比前一个候选 `loomery` 更干净 —— 后者 PyPI 未注册但 GitHub 有 ★3 同名小仓库）。**装机现状**：default profile 五条 skill 装在类目 `loomerto`（仓库与 profile 两侧统一为 `loomerto`，含 intake 与 maintain-the-loomerto-package），lock 的 identifier/URL 指向 `flmaximwang/Loomerto`、revision `7eed38f`，装好的副本与仓库逐份 `diff -rq` 一致；`plan-weave` profile 里是旧一代（类目 `plan-weave`，identifier 仍是旧仓库名），待随该 bot 退役一并清 | 已落地 |
 | **R-12** | 「**给一个 cli 入口**」—— 要能按 ref（`T-003#B-004` 这种）查**一个块/一条任务**的详细信息，而不是只给命令清单 | 两个只读入口（都带别名 `info`）：`py block show <slug> <块ref> [--json] [--runs N]` 给 状态/类型/归属/认领(含时刻)/在做+线程+转录/做什么/判据/依赖/评审/返工 ⟲N/产物/run/三视图路径；`py task show <slug> <任务ref> [--json]` 给 状态/认领/前置/块一览。纯只读（不落盘、不重渲、不写日志），ref 与对象类型不符退 2 并点明该用哪个 | 已落地 `d47d2ed` |
 | **R-13** | **调用式**：「我希望的格式是 `loomerto --plan <plan data file> command`」；并且「**不要支持 profile** —— 我从来没有定义过 loomerto 就是给 hermes 用的」 | 全局旗标换成 **`--plan <plan 数据文件>`**（= `$LOOMERTO_PLAN_FILE`；给目录也行）：只认这一份，**命令里不再写 slug**（位置参数整体左移一位：`block set <ref> <status>`、`task set_status <ref> <status>`、`block show/rm/insert/move/expand/collapse <ref>`、`task show/rm <ref>`、`note <text>`）。`--plans-root`（= `$LOOMERTO_PLANS_ROOT`）保留给「一份库里有好几份」。**`--profile` / `$LOOMERTO_PROFILE` 已从包里删除**：`plans_root()` 不再推断 `~/.hermes/...`，`exec --profile` 也删了（转录路径改由调用方 `--transcript <路径>` 给，`workers.py` 里那三个 hermes_home/live_root/transcript_path 助手一并删掉）；两个都没给时只看**当前目录的 `plan.json`**（没有就退 2 并打印该给什么）。 | 已落地 `c0ad8c8` |
 
@@ -107,10 +107,10 @@ AI 敲的是命令或直接改 json，两边改完都落到同一份 json，再�
 | R-19 顺带给 `check` 补一条「块形状」硬校验（缺键 / 类型不对 ⇒ ✗ 退 1） | 落点 = `cli.cmd_check`：`model.normalize_block` 只补不改，所以「缺什么」要**在补之前**读（`store.load()` 已经补过了 ⇒ 校验得改成读原始文件，或让 `load()` 把「补了哪些键」带出来）。**难度在这**：`load()` 现在是无返回值地补齐，`check` 想报「这份 plan 的哪几个块缺键」就得先想清这条信息怎么传（不建议让 `list`/`current` 这些只读命令也跟着报）。B 档只做收口，这条留待拍板 |
 | R-20 C 档 / R-21 D 档 | 都已开 issue（[#1](https://github.com/flmaximwang/Loomerto/issues/1) / [#2](https://github.com/flmaximwang/Loomerto/issues/2)）；真要做时落点都在 `model`（形状与派生之上），**不动 `plan.json` 结构、不动 `canvas-sync` 协议** |
 
-**skill 副本的拉平记录（2026-10-08，B 档）**：`skills/plan-weave/loomerto-plan/SKILL.md` 与
-`skills/plan-weave/loomerto-check-commands/SKILL.md` 是**发布源**；default profile 里装的副本在
+**skill 副本的拉平记录（2026-10-08，B 档）**：`skills/loomerto/loomerto-plan/SKILL.md` 与
+`skills/loomerto/loomerto-check-commands/SKILL.md` 是**发布源**；default profile 里装的副本在
 `~/.hermes/skills/loomerto/<同名目录>/`，改完 `cp` 过去再 `diff -rq`（除 `.DS_Store` 外应为空）。
-`plan-weave` profile 那份（`~/.hermes/profiles/plan-weave/skills/plan-weave/`）是旧一代，**不动**。
+`plan-weave` profile 那份（`~/.hermes/profiles/plan-weave/skills/loomerto/`）是旧一代，**不动**。
 
 **R-22 的拉平（2026-10-08）**：`block deps` 那几段在**两份都改了**（仓库源 + `~/.hermes/skills/loomerto/loomerto-plan/SKILL.md`）
 —— 没有整份 `cp`：default profile 的副本目前**另有会话写进去的段落**（约 100 行：`--no-render` 收尾、并行建块、

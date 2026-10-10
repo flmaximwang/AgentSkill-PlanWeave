@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [plan, collaboration, multi-agent, loomerto, visualization]
-    category: plan-weave
+    category: loomerto
     related_skills: [loomerto-remind, handle-a-recurring-progress-instruction, agent-to-agent-handoff]
 ---
 

@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [reminder, collaboration, multi-agent, notification, noise-control]
-    category: plan-weave
+    category: loomerto
     related_skills: [loomerto-plan, handle-a-recurring-progress-instruction]
 ---
 

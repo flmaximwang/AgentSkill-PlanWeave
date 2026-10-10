@@ -37,7 +37,7 @@ Loomerto/                             ← 仓库根 = python 项目根（GitHub:
 │                    共 24 个叶子命令）+ 中文输出。
 │                    **唯一允许 print、唯一决定退出码的地方。**
 ├── skills/                           随包发布的 skill（装进 Hermes profile 的是这一层）
-│   └── plan-weave/loomerto-plan/
+│   └── loomerto/loomerto-plan/
 │       ├── SKILL.md                  给 AI 的操作手册（模型 / 状态表 / 谁在做 / 坑）
 │       └── scripts/plan.py           **薄壳**：交代 plans 根 → 找包 → 调 cli.main()
 ├── docs/                             architecture.md（本文）/ cli-reference.md

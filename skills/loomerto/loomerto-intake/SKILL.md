@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [multi-agent, collaboration, evidence, handoff, discord, verification]
-    category: agent-orchestration
+    category: loomerto
     related_skills: [agent-to-agent-handoff, loomerto-plan, loomerto-remind]
 ---
 

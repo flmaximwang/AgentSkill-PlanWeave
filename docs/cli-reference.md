@@ -8,7 +8,7 @@
 > `set_input` / `set_output` / `set_command` 三条属性命令与 `block bypass`；命令面其余部分与 `0e153a1`
 > （分支 `feat/block-deps`，只加了 `block deps`，R-22）逐字节相同）。
 > 需求与缺口看 [`../REQUIREMENTS.md`](../REQUIREMENTS.md)；模型与操作纪律看
-> [`../skills/plan-weave/loomerto-plan/SKILL.md`](../skills/plan-weave/loomerto-plan/SKILL.md)。
+> [`../skills/loomerto/loomerto-plan/SKILL.md`](../skills/loomerto/loomerto-plan/SKILL.md)。
 > 重新生成底稿的办法（改过命令后必须重跑，别手抄）：
 > ```bash
 > for c in plan task block note digest render check current workers list open; do loomerto $c --help; done
@@ -61,7 +61,7 @@ python3 <skill>/scripts/plan.py <全局旗标> <子命令> [参数]   # skill �
 ```
 
 ```bash
-py() { python3 "$P" "$@"; }   # $P = <profile>/skills/plan-weave/loomerto-plan/scripts/plan.py
+py() { python3 "$P" "$@"; }   # $P = <profile>/skills/loomerto/loomerto-plan/scripts/plan.py
 ```
 
 - 纯 stdlib、零依赖、**不需要服务**；`requires-python >= 3.9`。

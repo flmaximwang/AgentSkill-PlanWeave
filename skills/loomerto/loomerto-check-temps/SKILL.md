@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [plan, collaboration, hygiene, temporary-files, validation]
-    category: plan-weave
+    category: loomerto
     related_skills: [loomerto-plan, loomerto-check-commands, loomerto-remind]
 ---
 
